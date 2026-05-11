@@ -60,8 +60,8 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
 
         // Seed roles
         modelBuilder.Entity<Role>().HasData(
-            new Role { Id = 1, Name = "SuperAdmin", Description = "Повний доступ до системи", CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc) },
-            new Role { Id = 2, Name = "Admin", Description = "Адміністратор системи", CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc) }
+            new Role { Id = 1, Name = "SuperAdmin", Description = "Повний доступ до системи", Color = "#2AAFCA", PermissionsJson = "[\"*\"]", IsSystem = true, IsDefault = false, CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc) },
+            new Role { Id = 2, Name = "Admin", Description = "Адміністратор системи", Color = "#6366F1", PermissionsJson = "[\"dashboard\",\"people\",\"groups\",\"admins\"]", IsSystem = true, IsDefault = true, CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc) }
         );
     }
 }
