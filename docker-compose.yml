@@ -4,7 +4,7 @@ services:
       context: .
       dockerfile: HomeGroup.API/Dockerfile
     ports:
-      - "8080:8080"
+      - "8081:8080"
     environment:
       - ASPNETCORE_ENVIRONMENT=Production
       - ConnectionStrings__DefaultConnection=Host=db;Database=homegroup;Username=postgres;Password=${POSTGRES_PASSWORD}
