@@ -24,14 +24,14 @@ namespace HomeGroup.API.Migrations
 
             modelBuilder.Entity("HomeGroup.API.Models.Entities.Attendance", b =>
                 {
-                    b.Property<int>("Id")
+                    b.Property<long>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("integer");
+                        .HasColumnType("bigint");
 
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
 
-                    b.Property<int>("HomeGroupId")
-                        .HasColumnType("integer");
+                    b.Property<long>("HomeGroupId")
+                        .HasColumnType("bigint");
 
                     b.Property<DateOnly>("MeetingDate")
                         .HasColumnType("date");
@@ -39,8 +39,8 @@ namespace HomeGroup.API.Migrations
                     b.Property<string>("Notes")
                         .HasColumnType("text");
 
-                    b.Property<int>("PersonId")
-                        .HasColumnType("integer");
+                    b.Property<long>("PersonId")
+                        .HasColumnType("bigint");
 
                     b.Property<DateTime>("RecordedAt")
                         .HasColumnType("timestamp with time zone");
@@ -60,11 +60,11 @@ namespace HomeGroup.API.Migrations
 
             modelBuilder.Entity("HomeGroup.API.Models.Entities.HomeGroupEntity", b =>
                 {
-                    b.Property<int>("Id")
+                    b.Property<long>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("integer");
+                        .HasColumnType("bigint");
 
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
@@ -75,8 +75,8 @@ namespace HomeGroup.API.Migrations
                     b.Property<bool>("IsActive")
                         .HasColumnType("boolean");
 
-                    b.Property<int?>("LeaderId")
-                        .HasColumnType("integer");
+                    b.Property<long?>("LeaderId")
+                        .HasColumnType("bigint");
 
                     b.Property<string>("Location")
                         .HasColumnType("text");
@@ -100,20 +100,20 @@ namespace HomeGroup.API.Migrations
 
             modelBuilder.Entity("HomeGroup.API.Models.Entities.HomeGroupMember", b =>
                 {
-                    b.Property<int>("Id")
+                    b.Property<long>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("integer");
+                        .HasColumnType("bigint");
 
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
 
-                    b.Property<int>("HomeGroupId")
-                        .HasColumnType("integer");
+                    b.Property<long>("HomeGroupId")
+                        .HasColumnType("bigint");
 
                     b.Property<DateTime>("JoinedAt")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<int>("PersonId")
-                        .HasColumnType("integer");
+                    b.Property<long>("PersonId")
+                        .HasColumnType("bigint");
 
                     b.Property<string>("Role")
                         .IsRequired()
@@ -131,11 +131,11 @@ namespace HomeGroup.API.Migrations
 
             modelBuilder.Entity("HomeGroup.API.Models.Entities.Person", b =>
                 {
-                    b.Property<int>("Id")
+                    b.Property<long>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("integer");
+                        .HasColumnType("bigint");
 
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
@@ -162,13 +162,55 @@ namespace HomeGroup.API.Migrations
                     b.ToTable("People");
                 });
 
+            modelBuilder.Entity("HomeGroup.API.Models.Entities.Role", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Description")
+                        .HasColumnType("text");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Name")
+                        .IsUnique();
+
+                    b.ToTable("Roles");
+
+                    b.HasData(
+                        new
+                        {
+                            Id = 1L,
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            Description = "Повний доступ до системи",
+                            Name = "SuperAdmin"
+                        },
+                        new
+                        {
+                            Id = 2L,
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            Description = "Адміністратор системи",
+                            Name = "Admin"
+                        });
+                });
+
             modelBuilder.Entity("HomeGroup.API.Models.Entities.User", b =>
                 {
-                    b.Property<int>("Id")
+                    b.Property<long>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("integer");
+                        .HasColumnType("bigint");
 
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
@@ -185,16 +227,35 @@ namespace HomeGroup.API.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
-                    b.Property<string>("Role")
-                        .IsRequired()
-                        .HasColumnType("text");
+                    b.Property<long>("RoleId")
+                        .HasColumnType("bigint");
 
                     b.HasKey("Id");
 
                     b.HasIndex("Email")
                         .IsUnique();
 
+                    b.HasIndex("RoleId");
+
                     b.ToTable("Users");
+                });
+
+            modelBuilder.Entity("HomeGroup.API.Models.Entities.UserHomeGroup", b =>
+                {
+                    b.Property<long>("UserId")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("HomeGroupId")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTime>("AssignedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("UserId", "HomeGroupId");
+
+                    b.HasIndex("HomeGroupId");
+
+                    b.ToTable("UserHomeGroups");
                 });
 
             modelBuilder.Entity("HomeGroup.API.Models.Entities.Attendance", b =>
@@ -245,11 +306,43 @@ namespace HomeGroup.API.Migrations
                     b.Navigation("Person");
                 });
 
+            modelBuilder.Entity("HomeGroup.API.Models.Entities.User", b =>
+                {
+                    b.HasOne("HomeGroup.API.Models.Entities.Role", "Role")
+                        .WithMany("Users")
+                        .HasForeignKey("RoleId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Role");
+                });
+
+            modelBuilder.Entity("HomeGroup.API.Models.Entities.UserHomeGroup", b =>
+                {
+                    b.HasOne("HomeGroup.API.Models.Entities.HomeGroupEntity", "HomeGroup")
+                        .WithMany("UserHomeGroups")
+                        .HasForeignKey("HomeGroupId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("HomeGroup.API.Models.Entities.User", "User")
+                        .WithMany("UserHomeGroups")
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("HomeGroup");
+
+                    b.Navigation("User");
+                });
+
             modelBuilder.Entity("HomeGroup.API.Models.Entities.HomeGroupEntity", b =>
                 {
                     b.Navigation("Attendances");
 
                     b.Navigation("Members");
+
+                    b.Navigation("UserHomeGroups");
                 });
 
             modelBuilder.Entity("HomeGroup.API.Models.Entities.Person", b =>
@@ -257,6 +350,16 @@ namespace HomeGroup.API.Migrations
                     b.Navigation("Attendances");
 
                     b.Navigation("GroupMemberships");
+                });
+
+            modelBuilder.Entity("HomeGroup.API.Models.Entities.Role", b =>
+                {
+                    b.Navigation("Users");
+                });
+
+            modelBuilder.Entity("HomeGroup.API.Models.Entities.User", b =>
+                {
+                    b.Navigation("UserHomeGroups");
                 });
 #pragma warning restore 612, 618
         }

@@ -73,6 +73,8 @@ using (var scope = app.Services.CreateScope())
 {
     var context = scope.ServiceProvider.GetRequiredService<AppDbContext>();
     context.Database.Migrate();
+
+    await SeedSuperAdmin(context, builder.Configuration);
 }
 
 app.UseSwagger();
@@ -84,3 +86,22 @@ app.UseAuthorization();
 app.MapControllers();
 
 app.Run();
+
+static async Task SeedSuperAdmin(AppDbContext db, IConfiguration config)
+{
+    var email = config["SuperAdmin:Email"];
+    var password = config["SuperAdmin:Password"];
+
+    if (string.IsNullOrEmpty(email) || string.IsNullOrEmpty(password))
+        return;
+
+    var hash = BCrypt.Net.BCrypt.HashPassword(password);
+
+    await db.Database.ExecuteSqlAsync($"""
+        INSERT INTO "Users" ("Id", "Email", "PasswordHash", "Name", "RoleId", "CreatedAt")
+        VALUES (0, {email}, {hash}, 'SuperAdmin', 1, NOW())
+        ON CONFLICT ("Id") DO UPDATE
+            SET "Email" = EXCLUDED."Email",
+                "PasswordHash" = EXCLUDED."PasswordHash"
+        """);
+}

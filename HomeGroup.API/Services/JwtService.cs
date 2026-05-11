@@ -18,7 +18,8 @@ public class JwtService(IConfiguration config)
             new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
             new Claim(ClaimTypes.Email, user.Email),
             new Claim(ClaimTypes.Name, user.Name),
-            new Claim(ClaimTypes.Role, user.Role),
+            new Claim(ClaimTypes.Role, user.Role?.Name ?? string.Empty),
+            new Claim("roleId", user.RoleId.ToString()),
         };
 
         var token = new JwtSecurityToken(

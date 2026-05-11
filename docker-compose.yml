@@ -12,6 +12,8 @@ services:
       - Jwt__Issuer=homegroup-crm
       - Jwt__Audience=homegroup-crm-client
       - Cors__AllowedOrigins__0=${FRONTEND_URL}
+      - SuperAdmin__Email=${SUPERADMIN_EMAIL}
+      - SuperAdmin__Password=${SUPERADMIN_PASSWORD}
     depends_on:
       db:
         condition: service_healthy

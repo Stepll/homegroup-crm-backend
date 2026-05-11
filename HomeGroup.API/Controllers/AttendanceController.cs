@@ -14,7 +14,7 @@ public class AttendanceController(AppDbContext db) : ControllerBase
 {
     [HttpGet]
     public async Task<ActionResult<List<AttendanceResponse>>> GetByGroup(
-        [FromQuery] int groupId,
+        [FromQuery] long groupId,
         [FromQuery] DateOnly? from,
         [FromQuery] DateOnly? to)
     {
@@ -34,7 +34,7 @@ public class AttendanceController(AppDbContext db) : ControllerBase
     }
 
     [HttpGet("summary")]
-    public async Task<ActionResult<List<AttendanceSummary>>> GetSummary([FromQuery] int groupId)
+    public async Task<ActionResult<List<AttendanceSummary>>> GetSummary([FromQuery] long groupId)
     {
         var summary = await db.Attendances
             .Where(a => a.HomeGroupId == groupId)

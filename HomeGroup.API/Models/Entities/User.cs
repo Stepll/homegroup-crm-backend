@@ -2,10 +2,13 @@ namespace HomeGroup.API.Models.Entities;
 
 public class User
 {
-    public int Id { get; set; }
+    public long Id { get; set; }
     public string Email { get; set; } = string.Empty;
     public string PasswordHash { get; set; } = string.Empty;
     public string Name { get; set; } = string.Empty;
-    public string Role { get; set; } = "Member"; // Admin, Leader, Member
+    public long RoleId { get; set; }
+    public Role Role { get; set; } = null!;
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+
+    public ICollection<UserHomeGroup> UserHomeGroups { get; set; } = [];
 }

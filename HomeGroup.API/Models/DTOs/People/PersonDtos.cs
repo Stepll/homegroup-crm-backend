@@ -4,4 +4,4 @@ public record CreatePersonRequest(string Name, string? Phone, string? Email, str
 
 public record UpdatePersonRequest(string Name, string? Phone, string? Email, string? Notes, string Status);
 
-public record PersonResponse(int Id, string Name, string? Phone, string? Email, string? Notes, string Status, DateTime CreatedAt);
+public record PersonResponse(long Id, string Name, string? Phone, string? Email, string? Notes, string Status, DateTime CreatedAt);

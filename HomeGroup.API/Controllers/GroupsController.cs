@@ -30,7 +30,7 @@ public class GroupsController(AppDbContext db) : ControllerBase
     }
 
     [HttpGet("{id}")]
-    public async Task<ActionResult<GroupResponse>> GetById(int id)
+    public async Task<ActionResult<GroupResponse>> GetById(long id)
     {
         var group = await db.HomeGroups
             .Include(g => g.Leader)
@@ -45,7 +45,7 @@ public class GroupsController(AppDbContext db) : ControllerBase
     }
 
     [HttpGet("{id}/members")]
-    public async Task<ActionResult<List<PersonResponse>>> GetMembers(int id)
+    public async Task<ActionResult<List<PersonResponse>>> GetMembers(long id)
     {
         var members = await db.HomeGroupMembers
             .Where(m => m.HomeGroupId == id)
@@ -78,7 +78,7 @@ public class GroupsController(AppDbContext db) : ControllerBase
     }
 
     [HttpPut("{id}")]
-    public async Task<ActionResult<GroupResponse>> Update(int id, UpdateGroupRequest request)
+    public async Task<ActionResult<GroupResponse>> Update(long id, UpdateGroupRequest request)
     {
         var group = await db.HomeGroups.Include(g => g.Leader).Include(g => g.Members).FirstOrDefaultAsync(g => g.Id == id);
         if (group is null) return NotFound();
@@ -96,7 +96,7 @@ public class GroupsController(AppDbContext db) : ControllerBase
     }
 
     [HttpPost("{id}/members")]
-    public async Task<IActionResult> AddMember(int id, AddMemberRequest request)
+    public async Task<IActionResult> AddMember(long id, AddMemberRequest request)
     {
         if (!await db.HomeGroups.AnyAsync(g => g.Id == id)) return NotFound();
         if (!await db.People.AnyAsync(p => p.Id == request.PersonId)) return NotFound();
@@ -110,7 +110,7 @@ public class GroupsController(AppDbContext db) : ControllerBase
     }
 
     [HttpDelete("{id}/members/{personId}")]
-    public async Task<IActionResult> RemoveMember(int id, int personId)
+    public async Task<IActionResult> RemoveMember(long id, long personId)
     {
         var member = await db.HomeGroupMembers.FirstOrDefaultAsync(m => m.HomeGroupId == id && m.PersonId == personId);
         if (member is null) return NotFound();

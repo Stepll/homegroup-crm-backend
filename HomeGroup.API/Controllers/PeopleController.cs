@@ -29,7 +29,7 @@ public class PeopleController(AppDbContext db) : ControllerBase
     }
 
     [HttpGet("{id}")]
-    public async Task<ActionResult<PersonResponse>> GetById(int id)
+    public async Task<ActionResult<PersonResponse>> GetById(long id)
     {
         var person = await db.People.FindAsync(id);
         if (person is null) return NotFound();
@@ -56,7 +56,7 @@ public class PeopleController(AppDbContext db) : ControllerBase
     }
 
     [HttpPut("{id}")]
-    public async Task<ActionResult<PersonResponse>> Update(int id, UpdatePersonRequest request)
+    public async Task<ActionResult<PersonResponse>> Update(long id, UpdatePersonRequest request)
     {
         var person = await db.People.FindAsync(id);
         if (person is null) return NotFound();
@@ -72,7 +72,7 @@ public class PeopleController(AppDbContext db) : ControllerBase
     }
 
     [HttpDelete("{id}")]
-    public async Task<IActionResult> Delete(int id)
+    public async Task<IActionResult> Delete(long id)
     {
         var person = await db.People.FindAsync(id);
         if (person is null) return NotFound();
