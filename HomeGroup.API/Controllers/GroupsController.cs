@@ -1,0 +1,122 @@
+using HomeGroup.API.Data;
+using HomeGroup.API.Models.DTOs.Groups;
+using HomeGroup.API.Models.DTOs.People;
+using HomeGroup.API.Models.Entities;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+
+namespace HomeGroup.API.Controllers;
+
+[ApiController]
+[Route("api/v1/groups")]
+[Authorize]
+public class GroupsController(AppDbContext db) : ControllerBase
+{
+    [HttpGet]
+    public async Task<ActionResult<List<GroupResponse>>> GetAll()
+    {
+        var groups = await db.HomeGroups
+            .Include(g => g.Leader)
+            .Include(g => g.Members)
+            .OrderBy(g => g.Name)
+            .Select(g => new GroupResponse(
+                g.Id, g.Name, g.Description, g.MeetingDay, g.MeetingTime, g.Location,
+                g.LeaderId, g.Leader != null ? g.Leader.Name : null,
+                g.IsActive, g.Members.Count))
+            .ToListAsync();
+
+        return Ok(groups);
+    }
+
+    [HttpGet("{id}")]
+    public async Task<ActionResult<GroupResponse>> GetById(int id)
+    {
+        var group = await db.HomeGroups
+            .Include(g => g.Leader)
+            .Include(g => g.Members)
+            .FirstOrDefaultAsync(g => g.Id == id);
+
+        if (group is null) return NotFound();
+
+        return Ok(new GroupResponse(
+            group.Id, group.Name, group.Description, group.MeetingDay, group.MeetingTime, group.Location,
+            group.LeaderId, group.Leader?.Name, group.IsActive, group.Members.Count));
+    }
+
+    [HttpGet("{id}/members")]
+    public async Task<ActionResult<List<PersonResponse>>> GetMembers(int id)
+    {
+        var members = await db.HomeGroupMembers
+            .Where(m => m.HomeGroupId == id)
+            .Include(m => m.Person)
+            .OrderBy(m => m.Person.Name)
+            .Select(m => new PersonResponse(m.Person.Id, m.Person.Name, m.Person.Phone, m.Person.Email, m.Person.Notes, m.Person.Status, m.Person.CreatedAt))
+            .ToListAsync();
+
+        return Ok(members);
+    }
+
+    [HttpPost]
+    public async Task<ActionResult<GroupResponse>> Create(CreateGroupRequest request)
+    {
+        var group = new HomeGroupEntity
+        {
+            Name = request.Name,
+            Description = request.Description,
+            MeetingDay = request.MeetingDay,
+            MeetingTime = request.MeetingTime,
+            Location = request.Location,
+            LeaderId = request.LeaderId,
+        };
+
+        db.HomeGroups.Add(group);
+        await db.SaveChangesAsync();
+
+        return CreatedAtAction(nameof(GetById), new { id = group.Id },
+            new GroupResponse(group.Id, group.Name, group.Description, group.MeetingDay, group.MeetingTime, group.Location, group.LeaderId, null, group.IsActive, 0));
+    }
+
+    [HttpPut("{id}")]
+    public async Task<ActionResult<GroupResponse>> Update(int id, UpdateGroupRequest request)
+    {
+        var group = await db.HomeGroups.Include(g => g.Leader).Include(g => g.Members).FirstOrDefaultAsync(g => g.Id == id);
+        if (group is null) return NotFound();
+
+        group.Name = request.Name;
+        group.Description = request.Description;
+        group.MeetingDay = request.MeetingDay;
+        group.MeetingTime = request.MeetingTime;
+        group.Location = request.Location;
+        group.LeaderId = request.LeaderId;
+        group.IsActive = request.IsActive;
+
+        await db.SaveChangesAsync();
+        return Ok(new GroupResponse(group.Id, group.Name, group.Description, group.MeetingDay, group.MeetingTime, group.Location, group.LeaderId, group.Leader?.Name, group.IsActive, group.Members.Count));
+    }
+
+    [HttpPost("{id}/members")]
+    public async Task<IActionResult> AddMember(int id, AddMemberRequest request)
+    {
+        if (!await db.HomeGroups.AnyAsync(g => g.Id == id)) return NotFound();
+        if (!await db.People.AnyAsync(p => p.Id == request.PersonId)) return NotFound();
+
+        if (await db.HomeGroupMembers.AnyAsync(m => m.HomeGroupId == id && m.PersonId == request.PersonId))
+            return Conflict(new { message = "Людина вже є учасником цієї групи" });
+
+        db.HomeGroupMembers.Add(new HomeGroupMember { HomeGroupId = id, PersonId = request.PersonId, Role = request.Role });
+        await db.SaveChangesAsync();
+        return Ok();
+    }
+
+    [HttpDelete("{id}/members/{personId}")]
+    public async Task<IActionResult> RemoveMember(int id, int personId)
+    {
+        var member = await db.HomeGroupMembers.FirstOrDefaultAsync(m => m.HomeGroupId == id && m.PersonId == personId);
+        if (member is null) return NotFound();
+
+        db.HomeGroupMembers.Remove(member);
+        await db.SaveChangesAsync();
+        return NoContent();
+    }
+}

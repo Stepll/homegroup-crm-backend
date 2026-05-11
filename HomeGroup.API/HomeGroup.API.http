@@ -1,0 +1,6 @@
+@HomeGroup.API_HostAddress = http://localhost:5159
+
+GET {{HomeGroup.API_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
