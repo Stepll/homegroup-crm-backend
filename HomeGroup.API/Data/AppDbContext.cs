@@ -12,6 +12,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<HomeGroupMember> HomeGroupMembers => Set<HomeGroupMember>();
     public DbSet<UserHomeGroup> UserHomeGroups => Set<UserHomeGroup>();
     public DbSet<Attendance> Attendances => Set<Attendance>();
+    public DbSet<PersonCustomField> PersonCustomFields => Set<PersonCustomField>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -57,6 +58,18 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             .WithMany()
             .HasForeignKey(g => g.LeaderId)
             .OnDelete(DeleteBehavior.SetNull);
+
+        modelBuilder.Entity<Person>()
+            .HasOne(p => p.PrimaryGroup)
+            .WithMany()
+            .HasForeignKey(p => p.PrimaryGroupId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        modelBuilder.Entity<PersonCustomField>()
+            .HasOne(f => f.Person)
+            .WithMany(p => p.CustomFields)
+            .HasForeignKey(f => f.PersonId)
+            .OnDelete(DeleteBehavior.Cascade);
 
         // Seed roles
         modelBuilder.Entity<Role>().HasData(

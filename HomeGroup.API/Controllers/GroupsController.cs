@@ -51,7 +51,7 @@ public class GroupsController(AppDbContext db) : ControllerBase
             .Where(m => m.HomeGroupId == id)
             .Include(m => m.Person)
             .OrderBy(m => m.Person.Name)
-            .Select(m => new PersonResponse(m.Person.Id, m.Person.Name, m.Person.Phone, m.Person.Email, m.Person.Notes, m.Person.Status, m.Person.CreatedAt))
+            .Select(m => new PersonResponse(m.Person.Id, m.Person.Name, m.Person.LastName, m.Person.Phone, m.Person.Email, m.Person.Notes, m.Person.Status, m.Person.CreatedAt))
             .ToListAsync();
 
         return Ok(members);
