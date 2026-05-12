@@ -51,7 +51,7 @@ public class GroupsController(AppDbContext db) : ControllerBase
             .Where(m => m.HomeGroupId == id)
             .Include(m => m.Person)
             .OrderBy(m => m.Person.Name)
-            .Select(m => new PersonResponse(m.Person.Id, m.Person.Name, m.Person.LastName, m.Person.Phone, m.Person.Email, m.Person.Notes, m.Person.Status, m.Person.CreatedAt))
+            .Select(m => new PersonResponse(m.Person.Id, m.Person.Name, m.Person.LastName, m.Person.Phone, m.Person.Email, m.Person.Notes, m.Person.Status, m.Person.PrimaryGroupId, null, m.Person.CreatedAt))
             .ToListAsync();
 
         return Ok(members);
@@ -150,6 +150,45 @@ public class GroupsController(AppDbContext db) : ControllerBase
         if (member is null) return NotFound();
 
         db.HomeGroupMembers.Remove(member);
+        await db.SaveChangesAsync();
+        return NoContent();
+    }
+
+    // Custom field definitions for a group
+
+    [HttpGet("{id}/custom-fields")]
+    public async Task<ActionResult<List<GroupCustomFieldDto>>> GetCustomFields(long id)
+    {
+        if (!await db.HomeGroups.AnyAsync(g => g.Id == id)) return NotFound();
+
+        var fields = await db.HomeGroupCustomFields
+            .Where(f => f.HomeGroupId == id)
+            .OrderBy(f => f.CreatedAt)
+            .Select(f => new GroupCustomFieldDto(f.Id, f.Name))
+            .ToListAsync();
+
+        return Ok(fields);
+    }
+
+    [HttpPost("{id}/custom-fields")]
+    public async Task<ActionResult<GroupCustomFieldDto>> AddCustomField(long id, CreateGroupCustomFieldRequest request)
+    {
+        if (!await db.HomeGroups.AnyAsync(g => g.Id == id)) return NotFound();
+
+        var field = new HomeGroupCustomField { HomeGroupId = id, Name = request.Name.Trim() };
+        db.HomeGroupCustomFields.Add(field);
+        await db.SaveChangesAsync();
+
+        return Ok(new GroupCustomFieldDto(field.Id, field.Name));
+    }
+
+    [HttpDelete("{id}/custom-fields/{fieldId}")]
+    public async Task<IActionResult> DeleteCustomField(long id, long fieldId)
+    {
+        var field = await db.HomeGroupCustomFields.FirstOrDefaultAsync(f => f.Id == fieldId && f.HomeGroupId == id);
+        if (field is null) return NotFound();
+
+        db.HomeGroupCustomFields.Remove(field);
         await db.SaveChangesAsync();
         return NoContent();
     }

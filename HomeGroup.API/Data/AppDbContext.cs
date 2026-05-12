@@ -12,7 +12,8 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<HomeGroupMember> HomeGroupMembers => Set<HomeGroupMember>();
     public DbSet<UserHomeGroup> UserHomeGroups => Set<UserHomeGroup>();
     public DbSet<Attendance> Attendances => Set<Attendance>();
-    public DbSet<PersonCustomField> PersonCustomFields => Set<PersonCustomField>();
+    public DbSet<HomeGroupCustomField> HomeGroupCustomFields => Set<HomeGroupCustomField>();
+    public DbSet<PersonCustomFieldValue> PersonCustomFieldValues => Set<PersonCustomFieldValue>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -65,11 +66,27 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             .HasForeignKey(p => p.PrimaryGroupId)
             .OnDelete(DeleteBehavior.SetNull);
 
-        modelBuilder.Entity<PersonCustomField>()
-            .HasOne(f => f.Person)
-            .WithMany(p => p.CustomFields)
-            .HasForeignKey(f => f.PersonId)
+        modelBuilder.Entity<HomeGroupCustomField>()
+            .HasOne(f => f.HomeGroup)
+            .WithMany()
+            .HasForeignKey(f => f.HomeGroupId)
             .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<PersonCustomFieldValue>()
+            .HasOne(v => v.Person)
+            .WithMany()
+            .HasForeignKey(v => v.PersonId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<PersonCustomFieldValue>()
+            .HasOne(v => v.Field)
+            .WithMany(f => f.Values)
+            .HasForeignKey(v => v.FieldId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<PersonCustomFieldValue>()
+            .HasIndex(v => new { v.PersonId, v.FieldId })
+            .IsUnique();
 
         // Seed roles
         modelBuilder.Entity<Role>().HasData(

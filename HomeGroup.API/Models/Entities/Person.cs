@@ -17,5 +17,4 @@ public class Person
 
     public ICollection<HomeGroupMember> GroupMemberships { get; set; } = [];
     public ICollection<Attendance> Attendances { get; set; } = [];
-    public ICollection<PersonCustomField> CustomFields { get; set; } = [];
 }
