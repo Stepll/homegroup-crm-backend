@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using HomeGroup.API.Data;
 using HomeGroup.API.Models.DTOs.People;
 using HomeGroup.API.Models.Entities;
@@ -25,6 +26,18 @@ public class PeopleController(AppDbContext db) : ControllerBase
 
         if (noGroup)
             query = query.Where(p => p.PrimaryGroupId == null);
+
+        // Non-superadmin users with visible groups can only see people from those groups
+        if (long.TryParse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value, out var userId) && userId != 0)
+        {
+            var visibleGroupIds = await db.UserHomeGroups
+                .Where(ug => ug.UserId == userId)
+                .Select(ug => ug.HomeGroupId)
+                .ToListAsync();
+
+            if (visibleGroupIds.Count > 0)
+                query = query.Where(p => p.PrimaryGroupId != null && visibleGroupIds.Contains(p.PrimaryGroupId.Value));
+        }
 
         var people = await query
             .OrderBy(p => p.Name)

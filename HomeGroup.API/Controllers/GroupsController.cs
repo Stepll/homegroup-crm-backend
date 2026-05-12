@@ -262,9 +262,9 @@ public class GroupsController(AppDbContext db) : ControllerBase
             .Select(x => new CabinetUpcomingEvent(x.Id, x.FullName, x.dob.ToString("yyyy-MM-dd"), x.days))
             .ToList();
 
-        // Org team (admins with PrimaryGroupId = this group)
+        // Org team: users whose primary group is this group, excluding superadmin (id=0)
         var orgAdmins = await db.Users
-            .Where(u => u.PrimaryGroupId == id)
+            .Where(u => u.PrimaryGroupId == id && u.Id != 0)
             .Select(u => new { u.Id, u.Name, u.LastName, u.Email })
             .ToListAsync();
 
