@@ -41,13 +41,16 @@ public class PeopleController(AppDbContext db) : ControllerBase
     {
         var person = await db.People
             .Include(p => p.PrimaryGroup)
+            .Include(p => p.OversightUser)
             .FirstOrDefaultAsync(p => p.Id == id);
 
         if (person is null) return NotFound();
 
         return Ok(new PersonDetailResponse(
             person.Id, person.Name, person.LastName, person.Phone, person.Email, person.Notes,
-            person.Status, person.OversightInfo, person.DateOfBirth,
+            person.Status, person.OversightInfo, person.OversightUserId,
+            person.OversightUser is null ? null : $"{person.OversightUser.Name}{(person.OversightUser.LastName is null ? "" : " " + person.OversightUser.LastName)}",
+            person.DateOfBirth,
             person.PrimaryGroupId, person.PrimaryGroup?.Name,
             person.CreatedAt,
             await GetCustomFields(id, person.PrimaryGroupId)));
@@ -72,7 +75,7 @@ public class PeopleController(AppDbContext db) : ControllerBase
 
         return CreatedAtAction(nameof(GetById), new { id = person.Id }, new PersonDetailResponse(
             person.Id, person.Name, person.LastName, person.Phone, person.Email, person.Notes,
-            person.Status, person.OversightInfo, person.DateOfBirth,
+            person.Status, person.OversightInfo, null, null, person.DateOfBirth,
             person.PrimaryGroupId, person.PrimaryGroup?.Name,
             person.CreatedAt, []));
     }
@@ -82,6 +85,7 @@ public class PeopleController(AppDbContext db) : ControllerBase
     {
         var person = await db.People
             .Include(p => p.PrimaryGroup)
+            .Include(p => p.OversightUser)
             .FirstOrDefaultAsync(p => p.Id == id);
 
         if (person is null) return NotFound();
@@ -95,6 +99,7 @@ public class PeopleController(AppDbContext db) : ControllerBase
         person.Notes = request.Notes?.Trim();
         person.Status = request.Status;
         person.OversightInfo = request.OversightInfo?.Trim();
+        person.OversightUserId = request.OversightUserId;
         person.DateOfBirth = request.DateOfBirth;
         person.PrimaryGroupId = request.PrimaryGroupId;
 
@@ -116,10 +121,13 @@ public class PeopleController(AppDbContext db) : ControllerBase
 
         await db.SaveChangesAsync();
         await db.Entry(person).Reference(p => p.PrimaryGroup).LoadAsync();
+        await db.Entry(person).Reference(p => p.OversightUser).LoadAsync();
 
         return Ok(new PersonDetailResponse(
             person.Id, person.Name, person.LastName, person.Phone, person.Email, person.Notes,
-            person.Status, person.OversightInfo, person.DateOfBirth,
+            person.Status, person.OversightInfo, person.OversightUserId,
+            person.OversightUser is null ? null : $"{person.OversightUser.Name}{(person.OversightUser.LastName is null ? "" : " " + person.OversightUser.LastName)}",
+            person.DateOfBirth,
             person.PrimaryGroupId, person.PrimaryGroup?.Name,
             person.CreatedAt,
             await GetCustomFields(id, person.PrimaryGroupId)));

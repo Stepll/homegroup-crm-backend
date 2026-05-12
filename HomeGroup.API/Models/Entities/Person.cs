@@ -10,6 +10,8 @@ public class Person
     public string? Notes { get; set; }
     public string Status { get; set; } = "Active";
     public string? OversightInfo { get; set; }
+    public long? OversightUserId { get; set; }
+    public User? OversightUser { get; set; }
     public DateOnly? DateOfBirth { get; set; }
     public long? PrimaryGroupId { get; set; }
     public HomeGroupEntity? PrimaryGroup { get; set; }

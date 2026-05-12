@@ -212,4 +212,145 @@ public class GroupsController(AppDbContext db) : ControllerBase
         await db.SaveChangesAsync();
         return NoContent();
     }
+
+    [HttpGet("{id}/cabinet")]
+    public async Task<ActionResult<GroupCabinetResponse>> GetCabinet(long id)
+    {
+        var group = await db.HomeGroups.FirstOrDefaultAsync(g => g.Id == id);
+        if (group is null) return NotFound();
+
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var nowTime = TimeOnly.FromDateTime(DateTime.UtcNow);
+
+        var nextMeeting = ComputeNextMeeting(group.MeetingDay, group.MeetingTime, today, nowTime);
+        var lastMeeting = ComputeLastMeeting(group.MeetingDay, group.MeetingTime, today, nowTime);
+
+        // Last attendance summary
+        CabinetAttendanceSummary? lastAttendance = null;
+        if (lastMeeting.HasValue)
+        {
+            var records = await db.Attendances
+                .Where(a => a.HomeGroupId == id && a.MeetingDate == lastMeeting.Value)
+                .ToListAsync();
+            if (records.Count > 0)
+                lastAttendance = new CabinetAttendanceSummary(records.Count(r => r.WasPresent), records.Count);
+            else
+            {
+                // No attendance records yet — just show member count as total
+                var memberCount = await db.HomeGroupMembers.CountAsync(m => m.HomeGroupId == id);
+                if (memberCount > 0) lastAttendance = new CabinetAttendanceSummary(0, memberCount);
+            }
+        }
+
+        // Upcoming birthdays (next 30 days)
+        var members = await db.People
+            .Where(p => p.PrimaryGroupId == id && p.DateOfBirth != null)
+            .Select(p => new { p.Id, p.Name, p.LastName, p.DateOfBirth })
+            .ToListAsync();
+
+        var upcomingEvents = members
+            .Select(p =>
+            {
+                var dob = p.DateOfBirth!.Value;
+                var thisYear = new DateOnly(today.Year, dob.Month, dob.Day);
+                if (thisYear < today) thisYear = thisYear.AddYears(1);
+                var days = thisYear.DayNumber - today.DayNumber;
+                return new { p.Id, FullName = $"{p.Name}{(p.LastName is null ? "" : " " + p.LastName)}", dob, days };
+            })
+            .Where(x => x.days <= 30)
+            .OrderBy(x => x.days)
+            .Select(x => new CabinetUpcomingEvent(x.Id, x.FullName, x.dob.ToString("yyyy-MM-dd"), x.days))
+            .ToList();
+
+        // Org team (admins with PrimaryGroupId = this group)
+        var orgAdmins = await db.Users
+            .Where(u => u.PrimaryGroupId == id)
+            .Select(u => new { u.Id, u.Name, u.LastName, u.Email })
+            .ToListAsync();
+
+        var adminIds = orgAdmins.Select(a => a.Id).ToList();
+        var oversees = await db.People
+            .Where(p => p.OversightUserId != null && adminIds.Contains(p.OversightUserId!.Value))
+            .Select(p => new { p.Id, p.Name, p.LastName, p.OversightUserId })
+            .ToListAsync();
+
+        var orgTeam = orgAdmins.Select(a =>
+        {
+            var myOversees = oversees
+                .Where(p => p.OversightUserId == a.Id)
+                .Select(p => new CabinetOverseePerson(p.Id, $"{p.Name}{(p.LastName is null ? "" : " " + p.LastName)}"))
+                .ToList();
+            return new CabinetOrgMember(a.Id, a.Name, a.LastName, a.Email, myOversees.Count, myOversees);
+        }).ToList();
+
+        // Stats
+        var totalMembers = await db.HomeGroupMembers.CountAsync(m => m.HomeGroupId == id);
+        var monthStart = new DateTime(DateTime.UtcNow.Year, DateTime.UtcNow.Month, 1, 0, 0, 0, DateTimeKind.Utc);
+        var newThisMonth = await db.People.CountAsync(p => p.PrimaryGroupId == id && p.CreatedAt >= monthStart);
+
+        var allAttendance = await db.Attendances.Where(a => a.HomeGroupId == id).ToListAsync();
+        double avgRate = 0;
+        if (allAttendance.Count > 0 && totalMembers > 0)
+        {
+            var byDate = allAttendance.GroupBy(a => a.MeetingDate);
+            avgRate = byDate.Average(g => g.Count(r => r.WasPresent) * 100.0 / totalMembers);
+        }
+
+        var stats = new CabinetStats(Math.Round(avgRate, 1), newThisMonth, totalMembers);
+
+        return Ok(new GroupCabinetResponse(
+            new CabinetGroupInfo(group.Id, group.Name, group.Color, group.MeetingDay, group.MeetingTime, group.Location),
+            nextMeeting?.ToString("yyyy-MM-dd"),
+            lastMeeting?.ToString("yyyy-MM-dd"),
+            lastAttendance,
+            upcomingEvents,
+            orgTeam,
+            stats));
+    }
+
+    // ── Meeting date helpers ──────────────────────────────────────────────────
+
+    private static readonly Dictionary<string, DayOfWeek> UkrDays = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["Понеділок"] = DayOfWeek.Monday,
+        ["Вівторок"] = DayOfWeek.Tuesday,
+        ["Середа"] = DayOfWeek.Wednesday,
+        ["Четвер"] = DayOfWeek.Thursday,
+        ["Пʼятниця"] = DayOfWeek.Friday,
+        ["П'ятниця"] = DayOfWeek.Friday,
+        ["Субота"] = DayOfWeek.Saturday,
+        ["Неділя"] = DayOfWeek.Sunday,
+    };
+
+    private static DateOnly? ComputeNextMeeting(string? meetingDay, string? meetingTime, DateOnly today, TimeOnly nowTime)
+    {
+        if (string.IsNullOrEmpty(meetingDay) || !UkrDays.TryGetValue(meetingDay, out var target)) return null;
+
+        var daysUntil = ((int)target - (int)today.DayOfWeek + 7) % 7;
+
+        if (daysUntil == 0)
+        {
+            // Today is the day — check if time has passed
+            if (TimeOnly.TryParse(meetingTime, out var mt) && nowTime >= mt)
+                daysUntil = 7;
+        }
+
+        return today.AddDays(daysUntil == 0 ? 7 : daysUntil);
+    }
+
+    private static DateOnly? ComputeLastMeeting(string? meetingDay, string? meetingTime, DateOnly today, TimeOnly nowTime)
+    {
+        if (string.IsNullOrEmpty(meetingDay) || !UkrDays.TryGetValue(meetingDay, out var target)) return null;
+
+        var daysAgo = ((int)today.DayOfWeek - (int)target + 7) % 7;
+
+        if (daysAgo == 0)
+        {
+            // Today is the day — the meeting is today only if time has already passed
+            if (!TimeOnly.TryParse(meetingTime, out var mt) || nowTime < mt)
+                daysAgo = 7;
+        }
+
+        return today.AddDays(-daysAgo == 0 ? -7 : -daysAgo);
+    }
 }

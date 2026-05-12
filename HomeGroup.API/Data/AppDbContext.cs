@@ -82,6 +82,12 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             .HasForeignKey(p => p.PrimaryGroupId)
             .OnDelete(DeleteBehavior.SetNull);
 
+        modelBuilder.Entity<Person>()
+            .HasOne(p => p.OversightUser)
+            .WithMany()
+            .HasForeignKey(p => p.OversightUserId)
+            .OnDelete(DeleteBehavior.SetNull);
+
         modelBuilder.Entity<HomeGroupCustomField>()
             .HasOne(f => f.HomeGroup)
             .WithMany()

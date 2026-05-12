@@ -10,6 +10,7 @@ public record UpdatePersonRequest(
     string? Notes,
     string Status,
     string? OversightInfo,
+    long? OversightUserId,
     DateOnly? DateOfBirth,
     long? PrimaryGroupId);
 
@@ -24,6 +25,8 @@ public record PersonDetailResponse(
     string? Notes,
     string Status,
     string? OversightInfo,
+    long? OversightUserId,
+    string? OversightUserName,
     DateOnly? DateOfBirth,
     long? PrimaryGroupId,
     string? PrimaryGroupName,
