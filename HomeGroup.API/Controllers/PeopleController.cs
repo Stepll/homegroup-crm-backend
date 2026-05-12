@@ -13,7 +13,7 @@ namespace HomeGroup.API.Controllers;
 public class PeopleController(AppDbContext db) : ControllerBase
 {
     [HttpGet]
-    public async Task<ActionResult<List<PersonResponse>>> GetAll([FromQuery] string? search)
+    public async Task<ActionResult<List<PersonResponse>>> GetAll([FromQuery] string? search, [FromQuery] bool noGroup = false)
     {
         var query = db.People.Include(p => p.PrimaryGroup).AsQueryable();
 
@@ -23,10 +23,14 @@ public class PeopleController(AppDbContext db) : ControllerBase
                 (p.LastName != null && p.LastName.Contains(search)) ||
                 (p.Phone != null && p.Phone.Contains(search)));
 
+        if (noGroup)
+            query = query.Where(p => p.PrimaryGroupId == null);
+
         var people = await query
             .OrderBy(p => p.Name)
             .Select(p => new PersonResponse(p.Id, p.Name, p.LastName, p.Phone, p.Email, p.Notes, p.Status,
-                p.PrimaryGroupId, p.PrimaryGroup != null ? p.PrimaryGroup.Name : null, p.CreatedAt))
+                p.PrimaryGroupId, p.PrimaryGroup != null ? p.PrimaryGroup.Name : null,
+                p.PrimaryGroup != null ? p.PrimaryGroup.Color : null, p.CreatedAt))
             .ToListAsync();
 
         return Ok(people);
@@ -82,6 +86,8 @@ public class PeopleController(AppDbContext db) : ControllerBase
 
         if (person is null) return NotFound();
 
+        var oldGroupId = person.PrimaryGroupId;
+
         person.Name = request.Name.Trim();
         person.LastName = request.LastName?.Trim();
         person.Phone = request.Phone?.Trim();
@@ -91,6 +97,22 @@ public class PeopleController(AppDbContext db) : ControllerBase
         person.OversightInfo = request.OversightInfo?.Trim();
         person.DateOfBirth = request.DateOfBirth;
         person.PrimaryGroupId = request.PrimaryGroupId;
+
+        // Sync HomeGroupMembers when primary group changes
+        if (oldGroupId != request.PrimaryGroupId)
+        {
+            if (oldGroupId.HasValue)
+            {
+                var oldMembership = await db.HomeGroupMembers
+                    .FirstOrDefaultAsync(m => m.PersonId == id && m.HomeGroupId == oldGroupId.Value);
+                if (oldMembership != null) db.HomeGroupMembers.Remove(oldMembership);
+            }
+            if (request.PrimaryGroupId.HasValue &&
+                !await db.HomeGroupMembers.AnyAsync(m => m.PersonId == id && m.HomeGroupId == request.PrimaryGroupId.Value))
+            {
+                db.HomeGroupMembers.Add(new HomeGroupMember { PersonId = id, HomeGroupId = request.PrimaryGroupId.Value });
+            }
+        }
 
         await db.SaveChangesAsync();
         await db.Entry(person).Reference(p => p.PrimaryGroup).LoadAsync();

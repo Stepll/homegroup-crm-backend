@@ -13,7 +13,7 @@ public record UpdatePersonRequest(
     DateOnly? DateOfBirth,
     long? PrimaryGroupId);
 
-public record PersonResponse(long Id, string Name, string? LastName, string? Phone, string? Email, string? Notes, string Status, long? PrimaryGroupId, string? PrimaryGroupName, DateTime CreatedAt);
+public record PersonResponse(long Id, string Name, string? LastName, string? Phone, string? Email, string? Notes, string Status, long? PrimaryGroupId, string? PrimaryGroupName, string? PrimaryGroupColor, DateTime CreatedAt);
 
 public record PersonDetailResponse(
     long Id,

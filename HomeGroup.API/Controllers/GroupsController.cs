@@ -51,7 +51,7 @@ public class GroupsController(AppDbContext db) : ControllerBase
             .Where(m => m.HomeGroupId == id)
             .Include(m => m.Person)
             .OrderBy(m => m.Person.Name)
-            .Select(m => new PersonResponse(m.Person.Id, m.Person.Name, m.Person.LastName, m.Person.Phone, m.Person.Email, m.Person.Notes, m.Person.Status, m.Person.PrimaryGroupId, null, m.Person.CreatedAt))
+            .Select(m => new PersonResponse(m.Person.Id, m.Person.Name, m.Person.LastName, m.Person.Phone, m.Person.Email, m.Person.Notes, m.Person.Status, m.Person.PrimaryGroupId, null, null, m.Person.CreatedAt))
             .ToListAsync();
 
         return Ok(members);
@@ -131,12 +131,32 @@ public class GroupsController(AppDbContext db) : ControllerBase
         var currentIds = current.Select(m => m.PersonId).ToHashSet();
         var newIds = request.PersonIds.ToHashSet();
 
+        var addedIds = newIds.Except(currentIds).ToList();
+        var removedIds = currentIds.Except(newIds).ToList();
+
         db.HomeGroupMembers.RemoveRange(current.Where(m => !newIds.Contains(m.PersonId)));
 
-        foreach (var personId in newIds.Except(currentIds))
+        foreach (var personId in addedIds)
         {
             if (await db.People.AnyAsync(p => p.Id == personId))
                 db.HomeGroupMembers.Add(new HomeGroupMember { HomeGroupId = id, PersonId = personId });
+        }
+
+        // Sync PrimaryGroupId for added/removed members
+        if (addedIds.Count > 0)
+        {
+            var addedPeople = await db.People.Where(p => addedIds.Contains(p.Id)).ToListAsync();
+            foreach (var person in addedPeople)
+                person.PrimaryGroupId = id;
+        }
+
+        if (removedIds.Count > 0)
+        {
+            var removedPeople = await db.People
+                .Where(p => removedIds.Contains(p.Id) && p.PrimaryGroupId == id)
+                .ToListAsync();
+            foreach (var person in removedPeople)
+                person.PrimaryGroupId = null;
         }
 
         await db.SaveChangesAsync();
