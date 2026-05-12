@@ -21,7 +21,7 @@ public class GroupsController(AppDbContext db) : ControllerBase
             .Include(g => g.Members)
             .OrderBy(g => g.Name)
             .Select(g => new GroupResponse(
-                g.Id, g.Name, g.Description, g.MeetingDay, g.MeetingTime, g.Location,
+                g.Id, g.Name, g.Description, g.Color, g.MeetingDay, g.MeetingTime, g.Location,
                 g.LeaderId, g.Leader != null ? g.Leader.Name : null,
                 g.IsActive, g.Members.Count))
             .ToListAsync();
@@ -40,7 +40,7 @@ public class GroupsController(AppDbContext db) : ControllerBase
         if (group is null) return NotFound();
 
         return Ok(new GroupResponse(
-            group.Id, group.Name, group.Description, group.MeetingDay, group.MeetingTime, group.Location,
+            group.Id, group.Name, group.Description, group.Color, group.MeetingDay, group.MeetingTime, group.Location,
             group.LeaderId, group.Leader?.Name, group.IsActive, group.Members.Count));
     }
 
@@ -64,6 +64,7 @@ public class GroupsController(AppDbContext db) : ControllerBase
         {
             Name = request.Name,
             Description = request.Description,
+            Color = request.Color,
             MeetingDay = request.MeetingDay,
             MeetingTime = request.MeetingTime,
             Location = request.Location,
@@ -74,7 +75,7 @@ public class GroupsController(AppDbContext db) : ControllerBase
         await db.SaveChangesAsync();
 
         return CreatedAtAction(nameof(GetById), new { id = group.Id },
-            new GroupResponse(group.Id, group.Name, group.Description, group.MeetingDay, group.MeetingTime, group.Location, group.LeaderId, null, group.IsActive, 0));
+            new GroupResponse(group.Id, group.Name, group.Description, group.Color, group.MeetingDay, group.MeetingTime, group.Location, group.LeaderId, null, group.IsActive, 0));
     }
 
     [HttpPut("{id}")]
@@ -85,6 +86,7 @@ public class GroupsController(AppDbContext db) : ControllerBase
 
         group.Name = request.Name;
         group.Description = request.Description;
+        group.Color = request.Color;
         group.MeetingDay = request.MeetingDay;
         group.MeetingTime = request.MeetingTime;
         group.Location = request.Location;
@@ -92,7 +94,18 @@ public class GroupsController(AppDbContext db) : ControllerBase
         group.IsActive = request.IsActive;
 
         await db.SaveChangesAsync();
-        return Ok(new GroupResponse(group.Id, group.Name, group.Description, group.MeetingDay, group.MeetingTime, group.Location, group.LeaderId, group.Leader?.Name, group.IsActive, group.Members.Count));
+        return Ok(new GroupResponse(group.Id, group.Name, group.Description, group.Color, group.MeetingDay, group.MeetingTime, group.Location, group.LeaderId, group.Leader?.Name, group.IsActive, group.Members.Count));
+    }
+
+    [HttpDelete("{id}")]
+    public async Task<IActionResult> Delete(long id)
+    {
+        var group = await db.HomeGroups.FirstOrDefaultAsync(g => g.Id == id);
+        if (group is null) return NotFound();
+
+        db.HomeGroups.Remove(group);
+        await db.SaveChangesAsync();
+        return NoContent();
     }
 
     [HttpPost("{id}/members")]
@@ -105,6 +118,27 @@ public class GroupsController(AppDbContext db) : ControllerBase
             return Conflict(new { message = "Людина вже є учасником цієї групи" });
 
         db.HomeGroupMembers.Add(new HomeGroupMember { HomeGroupId = id, PersonId = request.PersonId, Role = request.Role });
+        await db.SaveChangesAsync();
+        return Ok();
+    }
+
+    [HttpPut("{id}/members/sync")]
+    public async Task<IActionResult> SyncMembers(long id, SyncMembersRequest request)
+    {
+        if (!await db.HomeGroups.AnyAsync(g => g.Id == id)) return NotFound();
+
+        var current = await db.HomeGroupMembers.Where(m => m.HomeGroupId == id).ToListAsync();
+        var currentIds = current.Select(m => m.PersonId).ToHashSet();
+        var newIds = request.PersonIds.ToHashSet();
+
+        db.HomeGroupMembers.RemoveRange(current.Where(m => !newIds.Contains(m.PersonId)));
+
+        foreach (var personId in newIds.Except(currentIds))
+        {
+            if (await db.People.AnyAsync(p => p.Id == personId))
+                db.HomeGroupMembers.Add(new HomeGroupMember { HomeGroupId = id, PersonId = personId });
+        }
+
         await db.SaveChangesAsync();
         return Ok();
     }
