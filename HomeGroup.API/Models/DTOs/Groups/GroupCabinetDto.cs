@@ -25,3 +25,6 @@ public record CabinetOrgMember(
 public record CabinetOverseePerson(long Id, string FullName);
 
 public record CabinetStats(double AvgAttendanceRate, int NewMembersThisMonth, int TotalMembers);
+
+public record GroupEventDto(long Id, string Name, int Month, int Day, int? Year, int DaysUntil);
+public record CreateGroupEventRequest(string Name, int Month, int Day, int? Year);

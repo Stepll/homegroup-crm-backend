@@ -213,6 +213,56 @@ public class GroupsController(AppDbContext db) : ControllerBase
         return NoContent();
     }
 
+    [HttpGet("{id}/events")]
+    public async Task<ActionResult<List<GroupEventDto>>> GetEvents(long id)
+    {
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var events = await db.GroupEvents
+            .Where(e => e.HomeGroupId == id)
+            .OrderBy(e => e.CreatedAt)
+            .ToListAsync();
+
+        var result = events
+            .Select(e => (e, days: ComputeDaysUntil(e.Month, e.Day, e.Year, today)))
+            .Where(x => x.days >= 0)
+            .OrderBy(x => x.days)
+            .Take(5)
+            .Select(x => new GroupEventDto(x.e.Id, x.e.Name, x.e.Month, x.e.Day, x.e.Year, x.days))
+            .ToList();
+
+        return Ok(result);
+    }
+
+    [HttpPost("{id}/events")]
+    public async Task<ActionResult<GroupEventDto>> AddEvent(long id, CreateGroupEventRequest request)
+    {
+        if (!await db.HomeGroups.AnyAsync(g => g.Id == id)) return NotFound();
+
+        var evt = new GroupEvent
+        {
+            HomeGroupId = id,
+            Name = request.Name.Trim(),
+            Month = request.Month,
+            Day = request.Day,
+            Year = request.Year,
+        };
+        db.GroupEvents.Add(evt);
+        await db.SaveChangesAsync();
+
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        return Ok(new GroupEventDto(evt.Id, evt.Name, evt.Month, evt.Day, evt.Year, ComputeDaysUntil(evt.Month, evt.Day, evt.Year, today)));
+    }
+
+    [HttpDelete("{id}/events/{eventId}")]
+    public async Task<IActionResult> DeleteEvent(long id, long eventId)
+    {
+        var evt = await db.GroupEvents.FirstOrDefaultAsync(e => e.Id == eventId && e.HomeGroupId == id);
+        if (evt is null) return NotFound();
+        db.GroupEvents.Remove(evt);
+        await db.SaveChangesAsync();
+        return NoContent();
+    }
+
     [HttpGet("{id}/cabinet")]
     public async Task<ActionResult<GroupCabinetResponse>> GetCabinet(long id)
     {
@@ -306,6 +356,18 @@ public class GroupsController(AppDbContext db) : ControllerBase
             upcomingEvents,
             orgTeam,
             stats));
+    }
+
+    // ── Event helpers ─────────────────────────────────────────────────────────
+
+    private static int ComputeDaysUntil(int month, int day, int? year, DateOnly today)
+    {
+        if (year.HasValue)
+            return new DateOnly(year.Value, month, day).DayNumber - today.DayNumber;
+
+        var thisYear = new DateOnly(today.Year, month, day);
+        if (thisYear.DayNumber < today.DayNumber) thisYear = thisYear.AddYears(1);
+        return thisYear.DayNumber - today.DayNumber;
     }
 
     // ── Meeting date helpers ──────────────────────────────────────────────────

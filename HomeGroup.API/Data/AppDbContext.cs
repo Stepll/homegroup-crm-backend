@@ -15,6 +15,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<Attendance> Attendances => Set<Attendance>();
     public DbSet<HomeGroupCustomField> HomeGroupCustomFields => Set<HomeGroupCustomField>();
     public DbSet<PersonCustomFieldValue> PersonCustomFieldValues => Set<PersonCustomFieldValue>();
+    public DbSet<GroupEvent> GroupEvents => Set<GroupEvent>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -109,6 +110,12 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
         modelBuilder.Entity<PersonCustomFieldValue>()
             .HasIndex(v => new { v.PersonId, v.FieldId })
             .IsUnique();
+
+        modelBuilder.Entity<GroupEvent>()
+            .HasOne(e => e.HomeGroup)
+            .WithMany()
+            .HasForeignKey(e => e.HomeGroupId)
+            .OnDelete(DeleteBehavior.Cascade);
 
         // Seed roles
         modelBuilder.Entity<Role>().HasData(
