@@ -11,5 +11,5 @@ public class Role
     public bool IsDefault { get; set; } = false;
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
-    public ICollection<User> Users { get; set; } = [];
+    public ICollection<UserRole> UserRoles { get; set; } = [];
 }

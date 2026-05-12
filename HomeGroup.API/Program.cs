@@ -98,10 +98,16 @@ static async Task SeedSuperAdmin(AppDbContext db, IConfiguration config)
     var hash = BCrypt.Net.BCrypt.HashPassword(password);
 
     await db.Database.ExecuteSqlAsync($"""
-        INSERT INTO "Users" ("Id", "Email", "PasswordHash", "Name", "RoleId", "CreatedAt")
-        VALUES (0, {email}, {hash}, 'SuperAdmin', 1, NOW())
+        INSERT INTO "Users" ("Id", "Email", "PasswordHash", "Name", "CreatedAt")
+        VALUES (0, {email}, {hash}, 'SuperAdmin', NOW())
         ON CONFLICT ("Id") DO UPDATE
             SET "Email" = EXCLUDED."Email",
                 "PasswordHash" = EXCLUDED."PasswordHash"
+        """);
+
+    await db.Database.ExecuteSqlAsync($"""
+        INSERT INTO "UserRoles" ("UserId", "RoleId", "AssignedAt")
+        VALUES (0, 1, NOW())
+        ON CONFLICT ("UserId", "RoleId") DO NOTHING
         """);
 }

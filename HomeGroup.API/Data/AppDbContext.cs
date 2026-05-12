@@ -7,6 +7,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
 {
     public DbSet<Role> Roles => Set<Role>();
     public DbSet<User> Users => Set<User>();
+    public DbSet<UserRole> UserRoles => Set<UserRole>();
     public DbSet<Person> People => Set<Person>();
     public DbSet<HomeGroupEntity> HomeGroups => Set<HomeGroupEntity>();
     public DbSet<HomeGroupMember> HomeGroupMembers => Set<HomeGroupMember>();
@@ -26,10 +27,25 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             .IsUnique();
 
         modelBuilder.Entity<User>()
-            .HasOne(u => u.Role)
-            .WithMany(r => r.Users)
-            .HasForeignKey(u => u.RoleId)
-            .OnDelete(DeleteBehavior.Restrict);
+            .HasOne(u => u.PrimaryGroup)
+            .WithMany()
+            .HasForeignKey(u => u.PrimaryGroupId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        modelBuilder.Entity<UserRole>()
+            .HasKey(ur => new { ur.UserId, ur.RoleId });
+
+        modelBuilder.Entity<UserRole>()
+            .HasOne(ur => ur.User)
+            .WithMany(u => u.UserRoles)
+            .HasForeignKey(ur => ur.UserId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<UserRole>()
+            .HasOne(ur => ur.Role)
+            .WithMany(r => r.UserRoles)
+            .HasForeignKey(ur => ur.RoleId)
+            .OnDelete(DeleteBehavior.Cascade);
 
         modelBuilder.Entity<UserHomeGroup>()
             .HasKey(ug => new { ug.UserId, ug.HomeGroupId });

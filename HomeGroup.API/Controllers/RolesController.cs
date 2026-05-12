@@ -16,12 +16,12 @@ public class RolesController(AppDbContext db) : ControllerBase
     public async Task<ActionResult<List<RoleResponse>>> GetAll()
     {
         var roles = await db.Roles
-            .Include(r => r.Users)
+            .Include(r => r.UserRoles)
             .OrderBy(r => r.Id)
             .Select(r => new RoleResponse(
                 r.Id, r.Name, r.Description, r.Color,
                 r.GetPermissions(), r.IsSystem, r.IsDefault,
-                r.Users.Count, r.CreatedAt))
+                r.UserRoles.Count, r.CreatedAt))
             .ToListAsync();
 
         return Ok(roles);
@@ -30,13 +30,13 @@ public class RolesController(AppDbContext db) : ControllerBase
     [HttpGet("{id}")]
     public async Task<ActionResult<RoleResponse>> GetById(long id)
     {
-        var role = await db.Roles.Include(r => r.Users).FirstOrDefaultAsync(r => r.Id == id);
+        var role = await db.Roles.Include(r => r.UserRoles).FirstOrDefaultAsync(r => r.Id == id);
         if (role is null) return NotFound();
 
         return Ok(new RoleResponse(
             role.Id, role.Name, role.Description, role.Color,
             role.GetPermissions(), role.IsSystem, role.IsDefault,
-            role.Users.Count, role.CreatedAt));
+            role.UserRoles.Count, role.CreatedAt));
     }
 
     [HttpPost]
@@ -68,7 +68,7 @@ public class RolesController(AppDbContext db) : ControllerBase
     [HttpPut("{id}")]
     public async Task<ActionResult<RoleResponse>> Update(long id, UpdateRoleRequest request)
     {
-        var role = await db.Roles.Include(r => r.Users).FirstOrDefaultAsync(r => r.Id == id);
+        var role = await db.Roles.Include(r => r.UserRoles).FirstOrDefaultAsync(r => r.Id == id);
         if (role is null) return NotFound();
 
         if (await db.Roles.AnyAsync(r => r.Name == request.Name && r.Id != id))
@@ -88,7 +88,7 @@ public class RolesController(AppDbContext db) : ControllerBase
         return Ok(new RoleResponse(
             role.Id, role.Name, role.Description, role.Color,
             role.GetPermissions(), role.IsSystem, role.IsDefault,
-            role.Users.Count, role.CreatedAt));
+            role.UserRoles.Count, role.CreatedAt));
     }
 
     [HttpDelete("{id}")]
@@ -97,7 +97,7 @@ public class RolesController(AppDbContext db) : ControllerBase
         var role = await db.Roles.FirstOrDefaultAsync(r => r.Id == id);
         if (role is null) return NotFound();
         if (role.IsSystem) return Conflict(new { message = "Системну роль не можна видалити" });
-        if (await db.Users.AnyAsync(u => u.RoleId == id))
+        if (await db.UserRoles.AnyAsync(ur => ur.RoleId == id))
             return Conflict(new { message = "Неможливо видалити роль — є користувачі з цією роллю" });
 
         db.Roles.Remove(role);

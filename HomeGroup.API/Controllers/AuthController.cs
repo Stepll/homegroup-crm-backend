@@ -14,12 +14,14 @@ public class AuthController(AppDbContext db, JwtService jwt) : ControllerBase
     public async Task<ActionResult<AuthResponse>> Login(LoginRequest request)
     {
         var user = await db.Users
-            .Include(u => u.Role)
+            .Include(u => u.UserRoles).ThenInclude(ur => ur.Role)
             .FirstOrDefaultAsync(u => u.Email == request.Email);
 
         if (user is null || !BCrypt.Net.BCrypt.Verify(request.Password, user.PasswordHash))
             return Unauthorized(new { message = "Невірний email або пароль" });
 
-        return Ok(new AuthResponse(jwt.GenerateToken(user), user.Name, user.Email, user.Role.Name));
+        var primaryRole = user.UserRoles.OrderBy(ur => ur.Role.Name).FirstOrDefault()?.Role;
+
+        return Ok(new AuthResponse(jwt.GenerateToken(user), user.Name, user.Email, primaryRole?.Name ?? string.Empty));
     }
 }

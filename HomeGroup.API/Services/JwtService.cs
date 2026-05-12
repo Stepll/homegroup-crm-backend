@@ -13,14 +13,17 @@ public class JwtService(IConfiguration config)
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(config["Jwt:Secret"]!));
         var credentials = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
 
-        var claims = new[]
+        var roleNames = user.UserRoles.Select(ur => ur.Role.Name).OrderBy(n => n).ToList();
+
+        var claims = new List<Claim>
         {
-            new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
-            new Claim(ClaimTypes.Email, user.Email),
-            new Claim(ClaimTypes.Name, user.Name),
-            new Claim(ClaimTypes.Role, user.Role?.Name ?? string.Empty),
-            new Claim("roleId", user.RoleId.ToString()),
+            new(ClaimTypes.NameIdentifier, user.Id.ToString()),
+            new(ClaimTypes.Email, user.Email),
+            new(ClaimTypes.Name, user.Name),
         };
+
+        foreach (var roleName in roleNames)
+            claims.Add(new Claim(ClaimTypes.Role, roleName));
 
         var token = new JwtSecurityToken(
             issuer: config["Jwt:Issuer"],
