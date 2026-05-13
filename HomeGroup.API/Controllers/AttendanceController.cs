@@ -1,5 +1,6 @@
 using HomeGroup.API.Data;
 using HomeGroup.API.Models.DTOs.Attendance;
+using Entities = HomeGroup.API.Models.Entities;
 using HomeGroup.API.Models.Entities;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -80,6 +81,41 @@ public class AttendanceController(AppDbContext db) : ControllerBase
                     Notes = entry.Notes,
                 });
             }
+        }
+
+        await db.SaveChangesAsync();
+        return Ok();
+    }
+
+    [HttpGet("meta")]
+    public async Task<ActionResult<AttendanceMetaResponse>> GetMeta(
+        [FromQuery] long groupId, [FromQuery] DateOnly date)
+    {
+        var meta = await db.AttendanceMetas
+            .FirstOrDefaultAsync(m => m.HomeGroupId == groupId && m.MeetingDate == date);
+        return Ok(new AttendanceMetaResponse(meta?.GuestCount ?? 0, meta?.GuestInfo));
+    }
+
+    [HttpPost("meta")]
+    public async Task<IActionResult> SaveMeta(SaveAttendanceMetaRequest request)
+    {
+        var meta = await db.AttendanceMetas
+            .FirstOrDefaultAsync(m => m.HomeGroupId == request.HomeGroupId && m.MeetingDate == request.MeetingDate);
+
+        if (meta is null)
+        {
+            db.AttendanceMetas.Add(new Entities.AttendanceMeta
+            {
+                HomeGroupId = request.HomeGroupId,
+                MeetingDate = request.MeetingDate,
+                GuestCount = request.GuestCount,
+                GuestInfo = request.GuestInfo?.Trim(),
+            });
+        }
+        else
+        {
+            meta.GuestCount = request.GuestCount;
+            meta.GuestInfo = request.GuestInfo?.Trim();
         }
 
         await db.SaveChangesAsync();

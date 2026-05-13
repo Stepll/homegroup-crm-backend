@@ -13,6 +13,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<HomeGroupMember> HomeGroupMembers => Set<HomeGroupMember>();
     public DbSet<UserHomeGroup> UserHomeGroups => Set<UserHomeGroup>();
     public DbSet<Attendance> Attendances => Set<Attendance>();
+    public DbSet<AttendanceMeta> AttendanceMetas => Set<AttendanceMeta>();
     public DbSet<HomeGroupCustomField> HomeGroupCustomFields => Set<HomeGroupCustomField>();
     public DbSet<PersonCustomFieldValue> PersonCustomFieldValues => Set<PersonCustomFieldValue>();
     public DbSet<GroupEvent> GroupEvents => Set<GroupEvent>();
@@ -74,6 +75,16 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
 
         modelBuilder.Entity<Attendance>()
             .HasIndex(a => new { a.PersonId, a.HomeGroupId, a.MeetingDate })
+            .IsUnique();
+
+        modelBuilder.Entity<AttendanceMeta>()
+            .HasOne(m => m.HomeGroup)
+            .WithMany()
+            .HasForeignKey(m => m.HomeGroupId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<AttendanceMeta>()
+            .HasIndex(m => new { m.HomeGroupId, m.MeetingDate })
             .IsUnique();
 
         modelBuilder.Entity<HomeGroupEntity>()

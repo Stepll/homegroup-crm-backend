@@ -423,7 +423,13 @@ public class GroupsController(AppDbContext db) : ControllerBase
 
         var stats = new CabinetStats(Math.Round(avgRate, 1), newThisMonth, totalMembers);
 
-        var nextMeetingStr = nextMeeting?.ToString("yyyy-MM-dd");
+        // Use one-time override date if set and not yet expired
+        var nextMeetingStr = group.NextMeetingOverrideDate is not null
+            && DateOnly.TryParse(group.NextMeetingOverrideDate, out var overrideDate)
+            && overrideDate >= today
+            ? group.NextMeetingOverrideDate
+            : nextMeeting?.ToString("yyyy-MM-dd");
+
         var hasPlan = nextMeetingStr != null && await db.MeetingPlans
             .AnyAsync(p => p.HomeGroupId == id && p.MeetingDate == nextMeetingStr);
 
@@ -436,6 +442,16 @@ public class GroupsController(AppDbContext db) : ControllerBase
             orgTeam,
             stats,
             hasPlan));
+    }
+
+    [HttpPut("{id}/next-meeting")]
+    public async Task<IActionResult> SetNextMeeting(long id, SetNextMeetingRequest request)
+    {
+        var group = await db.HomeGroups.FirstOrDefaultAsync(g => g.Id == id);
+        if (group is null) return NotFound();
+        group.NextMeetingOverrideDate = request.Date;
+        await db.SaveChangesAsync();
+        return Ok();
     }
 
     // ── Event helpers ─────────────────────────────────────────────────────────
