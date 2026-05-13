@@ -16,6 +16,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<HomeGroupCustomField> HomeGroupCustomFields => Set<HomeGroupCustomField>();
     public DbSet<PersonCustomFieldValue> PersonCustomFieldValues => Set<PersonCustomFieldValue>();
     public DbSet<GroupEvent> GroupEvents => Set<GroupEvent>();
+    public DbSet<ChurchEvent> ChurchEvents => Set<ChurchEvent>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
