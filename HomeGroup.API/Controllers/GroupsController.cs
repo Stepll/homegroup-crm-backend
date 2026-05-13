@@ -1,6 +1,7 @@
 using HomeGroup.API.Data;
 using HomeGroup.API.Models.DTOs.Groups;
 using HomeGroup.API.Models.DTOs.People;
+using HomeGroup.API.Models.DTOs.Planning;
 using HomeGroup.API.Models.Entities;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -212,6 +213,74 @@ public class GroupsController(AppDbContext db) : ControllerBase
         await db.SaveChangesAsync();
         return NoContent();
     }
+
+    // ── Plans ─────────────────────────────────────────────────────────────────
+
+    [HttpGet("{id}/plans")]
+    public async Task<ActionResult<List<MeetingPlanSummaryDto>>> GetPlans(long id)
+    {
+        var plans = await db.MeetingPlans
+            .Where(p => p.HomeGroupId == id)
+            .OrderByDescending(p => p.MeetingDate)
+            .Select(p => new MeetingPlanSummaryDto(p.Id, p.MeetingDate, p.Blocks.Count, p.AppliedTemplateName))
+            .ToListAsync();
+
+        return Ok(plans);
+    }
+
+    [HttpGet("{id}/plans/date/{date}")]
+    public async Task<ActionResult<MeetingPlanDto>> GetPlanByDate(long id, string date)
+    {
+        var plan = await db.MeetingPlans
+            .Include(p => p.Blocks.OrderBy(b => b.Order))
+            .FirstOrDefaultAsync(p => p.HomeGroupId == id && p.MeetingDate == date);
+
+        if (plan is null) return NotFound();
+        return Ok(ToPlanDto(plan));
+    }
+
+    [HttpPost("{id}/plans")]
+    public async Task<ActionResult<MeetingPlanDto>> SavePlan(long id, SavePlanRequest request)
+    {
+        if (!await db.HomeGroups.AnyAsync(g => g.Id == id)) return NotFound();
+
+        var plan = await db.MeetingPlans
+            .Include(p => p.Blocks)
+            .FirstOrDefaultAsync(p => p.HomeGroupId == id && p.MeetingDate == request.MeetingDate);
+
+        if (plan is null)
+        {
+            plan = new HomeMeetingPlan { HomeGroupId = id, MeetingDate = request.MeetingDate };
+            db.MeetingPlans.Add(plan);
+        }
+        else
+        {
+            db.MeetingPlanBlocks.RemoveRange(plan.Blocks);
+            plan.UpdatedAt = DateTime.UtcNow;
+        }
+
+        plan.AppliedTemplateName = request.AppliedTemplateName;
+        plan.Blocks = request.Blocks.Select(b => new MeetingPlanBlock
+        {
+            Order = b.Order,
+            Time = b.Time.Trim(),
+            Title = b.Title.Trim(),
+            Info = b.Info?.Trim(),
+            Responsible = b.Responsible?.Trim(),
+        }).ToList();
+
+        await db.SaveChangesAsync();
+
+        await db.Entry(plan).Collection(p => p.Blocks).LoadAsync();
+        return Ok(ToPlanDto(plan));
+    }
+
+    private static MeetingPlanDto ToPlanDto(HomeMeetingPlan p) => new(
+        p.Id, p.HomeGroupId, p.MeetingDate, p.AppliedTemplateName,
+        p.Blocks.OrderBy(b => b.Order)
+            .Select(b => new PlanBlockDto(b.Id, b.Order, b.Time, b.Title, b.Info, b.Responsible))
+            .ToList(),
+        p.UpdatedAt);
 
     [HttpGet("{id}/events")]
     public async Task<ActionResult<List<GroupEventDto>>> GetEvents(long id)

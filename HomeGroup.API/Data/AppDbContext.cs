@@ -17,6 +17,10 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<PersonCustomFieldValue> PersonCustomFieldValues => Set<PersonCustomFieldValue>();
     public DbSet<GroupEvent> GroupEvents => Set<GroupEvent>();
     public DbSet<ChurchEvent> ChurchEvents => Set<ChurchEvent>();
+    public DbSet<PlanTemplate> PlanTemplates => Set<PlanTemplate>();
+    public DbSet<PlanTemplateBlock> PlanTemplateBlocks => Set<PlanTemplateBlock>();
+    public DbSet<HomeMeetingPlan> MeetingPlans => Set<HomeMeetingPlan>();
+    public DbSet<MeetingPlanBlock> MeetingPlanBlocks => Set<MeetingPlanBlock>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -116,6 +120,28 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             .HasOne(e => e.HomeGroup)
             .WithMany()
             .HasForeignKey(e => e.HomeGroupId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<PlanTemplateBlock>()
+            .HasOne(b => b.Template)
+            .WithMany(t => t.Blocks)
+            .HasForeignKey(b => b.TemplateId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<HomeMeetingPlan>()
+            .HasOne(p => p.HomeGroup)
+            .WithMany()
+            .HasForeignKey(p => p.HomeGroupId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<HomeMeetingPlan>()
+            .HasIndex(p => new { p.HomeGroupId, p.MeetingDate })
+            .IsUnique();
+
+        modelBuilder.Entity<MeetingPlanBlock>()
+            .HasOne(b => b.Plan)
+            .WithMany(p => p.Blocks)
+            .HasForeignKey(b => b.PlanId)
             .OnDelete(DeleteBehavior.Cascade);
 
         // Seed roles
