@@ -444,6 +444,81 @@ public class GroupsController(AppDbContext db) : ControllerBase
             hasPlan));
     }
 
+    [HttpGet("{id}/stats")]
+    public async Task<ActionResult<GroupStatsResponse>> GetStats(long id, [FromQuery] string period = "3m")
+    {
+        if (!await db.HomeGroups.AnyAsync(g => g.Id == id)) return NotFound();
+
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var periodStart = period switch
+        {
+            "1m" => today.AddMonths(-1),
+            "6m" => today.AddMonths(-6),
+            _ => today.AddMonths(-3),
+        };
+        var periodStartDt = new DateTime(periodStart.Year, periodStart.Month, periodStart.Day, 0, 0, 0, DateTimeKind.Utc);
+
+        var attendance = await db.Attendances
+            .Include(a => a.Person)
+            .Where(a => a.HomeGroupId == id && a.MeetingDate >= periodStart)
+            .OrderBy(a => a.MeetingDate)
+            .ToListAsync();
+
+        var metaLookup = await db.AttendanceMetas
+            .Where(m => m.HomeGroupId == id && m.MeetingDate >= periodStart)
+            .ToDictionaryAsync(m => m.MeetingDate, m => m.GuestCount);
+
+        // Per-meeting stats
+        var byDate = attendance.GroupBy(a => a.MeetingDate).OrderBy(g => g.Key).ToList();
+
+        var meetings = byDate.Select(g =>
+        {
+            var presentCount = g.Count(a => a.WasPresent);
+            var totalMembers = g.Count();
+            var guestCount = metaLookup.GetValueOrDefault(g.Key, 0);
+            var absentees = g.Where(a => !a.WasPresent)
+                .Select(a => $"{a.Person.Name}{(a.Person.LastName is null ? "" : " " + a.Person.LastName)}")
+                .OrderBy(n => n)
+                .ToList();
+            return new MeetingStatsItem(
+                g.Key.ToString("yyyy-MM-dd"),
+                presentCount,
+                totalMembers,
+                totalMembers == 0 ? 0 : Math.Round(presentCount * 100.0 / totalMembers, 1),
+                guestCount,
+                absentees);
+        }).ToList();
+
+        // Per-person stats
+        var personStats = attendance
+            .GroupBy(a => new { a.PersonId, Name = $"{a.Person.Name}{(a.Person.LastName is null ? "" : " " + a.Person.LastName)}" })
+            .Select(g =>
+            {
+                var present = g.Count(a => a.WasPresent);
+                var total = g.Count();
+                return new PersonAttendanceStat(
+                    g.Key.PersonId,
+                    g.Key.Name,
+                    present,
+                    total,
+                    total == 0 ? 0 : Math.Round(present * 100.0 / total, 1));
+            })
+            .OrderByDescending(p => p.AttendanceRate)
+            .ThenByDescending(p => p.PresentCount)
+            .ToList();
+
+        // Summary
+        var avgRate = meetings.Count > 0 && meetings.Any(m => m.TotalMembers > 0)
+            ? meetings.Where(m => m.TotalMembers > 0).Average(m => m.AttendanceRate)
+            : 0;
+        var totalGuests = metaLookup.Values.Sum();
+        var newMembers = await db.People.CountAsync(p => p.PrimaryGroupId == id && p.CreatedAt >= periodStartDt);
+
+        var summary = new StatsSummary(Math.Round(avgRate, 1), meetings.Count, totalGuests, newMembers);
+
+        return Ok(new GroupStatsResponse(summary, meetings, personStats));
+    }
+
     [HttpPut("{id}/next-meeting")]
     public async Task<IActionResult> SetNextMeeting(long id, SetNextMeetingRequest request)
     {
