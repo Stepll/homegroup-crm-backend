@@ -20,6 +20,7 @@ HomeGroup.API/
     GroupsController.cs          — /api/v1/groups (CRUD + members + custom fields +
                                     cabinet + events + plans + stats + next-meeting)
     PeopleController.cs          — /api/v1/people (CRUD + custom field values)
+    PersonStatusesController.cs  — /api/v1/person-statuses (CRUD)
     RolesController.cs           — /api/v1/roles (CRUD, system role protection)
     AttendanceController.cs      — /api/v1/attendance (records + meta)
     ChurchEventsController.cs    — /api/v1/church-events (global church calendar)
@@ -32,9 +33,12 @@ HomeGroup.API/
       Role.cs                    — Id, Name, Color, PermissionsJson, IsSystem, IsDefault
       User.cs                    — Id, Email, PasswordHash, Name, LastName,
                                    PrimaryGroupId, UserRoles[], UserHomeGroups[]
-      Person.cs                  — Id, Name, LastName, Phone, Email, Notes, PersonStatusId?,
-                                   OversightInfo, OversightUserId, DateOfBirth,
-                                   PrimaryGroupId, CreatedAt
+      Person.cs                  — Id, Name, LastName, Phone, Email, Telegram?,
+                                   Notes, Gender?, MaritalStatus?, Address?,
+                                   DateOfBirth?, IsBaptized, Church?, Ministry?,
+                                   IsBaptizedWithSpirit, PersonStatusId?,
+                                   OversightInfo?, OversightUserId?,
+                                   PrimaryGroupId?, CreatedAt
       PersonStatus.cs            — Id, Name, Color, CreatedAt
       HomeGroupEntity.cs         — Id, Name, Description, Color, MeetingDay/Time,
                                    Location, LeaderId, TelegramGroupId,
@@ -67,7 +71,11 @@ HomeGroup.API/
                                    GroupEventDto, CreateGroupEventRequest
       Groups/GroupStatsDto.cs    — GroupStatsResponse, StatsSummary, MeetingStatsItem,
                                    PersonAttendanceStat
-      People/PersonDtos.cs
+      People/PersonDtos.cs       — CreatePersonRequest, UpdatePersonRequest (всі поля),
+                                   PersonResponse, PersonDetailResponse (з розширеними полями),
+                                   CustomFieldDto
+      PersonStatuses/PersonStatusDtos.cs — PersonStatusDto(Id,Name,Color),
+                                   CreatePersonStatusRequest, UpdatePersonStatusRequest
       Roles/RoleDtos.cs
       Attendance/AttendanceDtos.cs — RecordAttendanceRequest, AttendanceEntry,
                                      AttendanceResponse, AttendanceSummary,
@@ -233,6 +241,8 @@ DELETE /api/v1/person-statuses/:id
 7. `AddTelegramGroupId` — HomeGroupEntity.TelegramGroupId
 8. `AddNextMeetingOverrideAndMeetingMeta` — HomeGroupEntity.NextMeetingOverrideDate + AttendanceMeta table
 9. `AddPersonStatuses` — PersonStatuses table + Person.PersonStatusId FK (replaces string Status)
+10. `AddPersonExtendedFields` — Person: Telegram, Gender, MaritalStatus, Address,
+    IsBaptized, Church, Ministry, IsBaptizedWithSpirit
 
 ## Development Commands
 
@@ -293,6 +303,8 @@ Nginx проксує на контейнер. SSL через Certbot + Let's Enc
 - [x] Group Stats endpoint (per-period: summary, per-meeting, per-person)
 - [x] Docker + Nginx + SSL deployment
 - [x] Person Statuses CRUD (configurable, color + name, FK on Person)
+- [x] Extended Person fields (Telegram, Gender, MaritalStatus, Address,
+      IsBaptized, Church, Ministry, IsBaptizedWithSpirit)
 
 ## TODO
 
