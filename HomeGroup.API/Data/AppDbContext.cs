@@ -22,6 +22,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<PlanTemplateBlock> PlanTemplateBlocks => Set<PlanTemplateBlock>();
     public DbSet<HomeMeetingPlan> MeetingPlans => Set<HomeMeetingPlan>();
     public DbSet<MeetingPlanBlock> MeetingPlanBlocks => Set<MeetingPlanBlock>();
+    public DbSet<PersonStatus> PersonStatuses => Set<PersonStatus>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -103,6 +104,12 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             .HasOne(p => p.OversightUser)
             .WithMany()
             .HasForeignKey(p => p.OversightUserId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        modelBuilder.Entity<Person>()
+            .HasOne(p => p.PersonStatus)
+            .WithMany()
+            .HasForeignKey(p => p.PersonStatusId)
             .OnDelete(DeleteBehavior.SetNull);
 
         modelBuilder.Entity<HomeGroupCustomField>()

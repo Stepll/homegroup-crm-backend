@@ -1,3 +1,5 @@
+using HomeGroup.API.Models.DTOs.PersonStatuses;
+
 namespace HomeGroup.API.Models.DTOs.People;
 
 public record CreatePersonRequest(string Name, string? LastName, long? PrimaryGroupId);
@@ -8,13 +10,13 @@ public record UpdatePersonRequest(
     string? Phone,
     string? Email,
     string? Notes,
-    string Status,
+    long? PersonStatusId,
     string? OversightInfo,
     long? OversightUserId,
     DateOnly? DateOfBirth,
     long? PrimaryGroupId);
 
-public record PersonResponse(long Id, string Name, string? LastName, string? Phone, string? Email, string? Notes, string Status, long? PrimaryGroupId, string? PrimaryGroupName, string? PrimaryGroupColor, DateTime CreatedAt);
+public record PersonResponse(long Id, string Name, string? LastName, string? Phone, string? Email, string? Notes, PersonStatusDto? Status, long? PrimaryGroupId, string? PrimaryGroupName, string? PrimaryGroupColor, DateTime CreatedAt);
 
 public record PersonDetailResponse(
     long Id,
@@ -23,7 +25,7 @@ public record PersonDetailResponse(
     string? Phone,
     string? Email,
     string? Notes,
-    string Status,
+    PersonStatusDto? Status,
     string? OversightInfo,
     long? OversightUserId,
     string? OversightUserName,

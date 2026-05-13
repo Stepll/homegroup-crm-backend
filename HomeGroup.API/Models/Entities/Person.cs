@@ -8,7 +8,8 @@ public class Person
     public string? Phone { get; set; }
     public string? Email { get; set; }
     public string? Notes { get; set; }
-    public string Status { get; set; } = "Active";
+    public long? PersonStatusId { get; set; }
+    public PersonStatus? PersonStatus { get; set; }
     public string? OversightInfo { get; set; }
     public long? OversightUserId { get; set; }
     public User? OversightUser { get; set; }

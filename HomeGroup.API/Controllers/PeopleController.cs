@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using HomeGroup.API.Data;
 using HomeGroup.API.Models.DTOs.People;
+using HomeGroup.API.Models.DTOs.PersonStatuses;
 using HomeGroup.API.Models.Entities;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -16,7 +17,7 @@ public class PeopleController(AppDbContext db) : ControllerBase
     [HttpGet]
     public async Task<ActionResult<List<PersonResponse>>> GetAll([FromQuery] string? search, [FromQuery] bool noGroup = false)
     {
-        var query = db.People.Include(p => p.PrimaryGroup).AsQueryable();
+        var query = db.People.Include(p => p.PrimaryGroup).Include(p => p.PersonStatus).AsQueryable();
 
         if (!string.IsNullOrWhiteSpace(search))
             query = query.Where(p =>
@@ -41,7 +42,8 @@ public class PeopleController(AppDbContext db) : ControllerBase
 
         var people = await query
             .OrderBy(p => p.Name)
-            .Select(p => new PersonResponse(p.Id, p.Name, p.LastName, p.Phone, p.Email, p.Notes, p.Status,
+            .Select(p => new PersonResponse(p.Id, p.Name, p.LastName, p.Phone, p.Email, p.Notes,
+                p.PersonStatus != null ? new PersonStatusDto(p.PersonStatus.Id, p.PersonStatus.Name, p.PersonStatus.Color) : null,
                 p.PrimaryGroupId, p.PrimaryGroup != null ? p.PrimaryGroup.Name : null,
                 p.PrimaryGroup != null ? p.PrimaryGroup.Color : null, p.CreatedAt))
             .ToListAsync();
@@ -55,13 +57,16 @@ public class PeopleController(AppDbContext db) : ControllerBase
         var person = await db.People
             .Include(p => p.PrimaryGroup)
             .Include(p => p.OversightUser)
+            .Include(p => p.PersonStatus)
             .FirstOrDefaultAsync(p => p.Id == id);
 
         if (person is null) return NotFound();
 
+        var statusDto = person.PersonStatus is null ? null : new PersonStatusDto(person.PersonStatus.Id, person.PersonStatus.Name, person.PersonStatus.Color);
+
         return Ok(new PersonDetailResponse(
             person.Id, person.Name, person.LastName, person.Phone, person.Email, person.Notes,
-            person.Status, person.OversightInfo, person.OversightUserId,
+            statusDto, person.OversightInfo, person.OversightUserId,
             person.OversightUser is null ? null : $"{person.OversightUser.Name}{(person.OversightUser.LastName is null ? "" : " " + person.OversightUser.LastName)}",
             person.DateOfBirth,
             person.PrimaryGroupId, person.PrimaryGroup?.Name,
@@ -88,7 +93,7 @@ public class PeopleController(AppDbContext db) : ControllerBase
 
         return CreatedAtAction(nameof(GetById), new { id = person.Id }, new PersonDetailResponse(
             person.Id, person.Name, person.LastName, person.Phone, person.Email, person.Notes,
-            person.Status, person.OversightInfo, null, null, person.DateOfBirth,
+            null, person.OversightInfo, null, null, person.DateOfBirth,
             person.PrimaryGroupId, person.PrimaryGroup?.Name,
             person.CreatedAt, []));
     }
@@ -99,6 +104,7 @@ public class PeopleController(AppDbContext db) : ControllerBase
         var person = await db.People
             .Include(p => p.PrimaryGroup)
             .Include(p => p.OversightUser)
+            .Include(p => p.PersonStatus)
             .FirstOrDefaultAsync(p => p.Id == id);
 
         if (person is null) return NotFound();
@@ -110,7 +116,7 @@ public class PeopleController(AppDbContext db) : ControllerBase
         person.Phone = request.Phone?.Trim();
         person.Email = request.Email?.Trim();
         person.Notes = request.Notes?.Trim();
-        person.Status = request.Status;
+        person.PersonStatusId = request.PersonStatusId;
         person.OversightInfo = request.OversightInfo?.Trim();
         person.OversightUserId = request.OversightUserId;
         person.DateOfBirth = request.DateOfBirth;
@@ -135,10 +141,13 @@ public class PeopleController(AppDbContext db) : ControllerBase
         await db.SaveChangesAsync();
         await db.Entry(person).Reference(p => p.PrimaryGroup).LoadAsync();
         await db.Entry(person).Reference(p => p.OversightUser).LoadAsync();
+        await db.Entry(person).Reference(p => p.PersonStatus).LoadAsync();
+
+        var updatedStatusDto = person.PersonStatus is null ? null : new PersonStatusDto(person.PersonStatus.Id, person.PersonStatus.Name, person.PersonStatus.Color);
 
         return Ok(new PersonDetailResponse(
             person.Id, person.Name, person.LastName, person.Phone, person.Email, person.Notes,
-            person.Status, person.OversightInfo, person.OversightUserId,
+            updatedStatusDto, person.OversightInfo, person.OversightUserId,
             person.OversightUser is null ? null : $"{person.OversightUser.Name}{(person.OversightUser.LastName is null ? "" : " " + person.OversightUser.LastName)}",
             person.DateOfBirth,
             person.PrimaryGroupId, person.PrimaryGroup?.Name,

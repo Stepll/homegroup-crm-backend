@@ -1,6 +1,7 @@
 using HomeGroup.API.Data;
 using HomeGroup.API.Models.DTOs.Groups;
 using HomeGroup.API.Models.DTOs.People;
+using HomeGroup.API.Models.DTOs.PersonStatuses;
 using HomeGroup.API.Models.DTOs.Planning;
 using HomeGroup.API.Models.Entities;
 using Microsoft.AspNetCore.Authorization;
@@ -50,9 +51,11 @@ public class GroupsController(AppDbContext db) : ControllerBase
     {
         var members = await db.HomeGroupMembers
             .Where(m => m.HomeGroupId == id)
-            .Include(m => m.Person)
+            .Include(m => m.Person).ThenInclude(p => p.PersonStatus)
             .OrderBy(m => m.Person.Name)
-            .Select(m => new PersonResponse(m.Person.Id, m.Person.Name, m.Person.LastName, m.Person.Phone, m.Person.Email, m.Person.Notes, m.Person.Status, m.Person.PrimaryGroupId, null, null, m.Person.CreatedAt))
+            .Select(m => new PersonResponse(m.Person.Id, m.Person.Name, m.Person.LastName, m.Person.Phone, m.Person.Email, m.Person.Notes,
+                m.Person.PersonStatus != null ? new PersonStatusDto(m.Person.PersonStatus.Id, m.Person.PersonStatus.Name, m.Person.PersonStatus.Color) : null,
+                m.Person.PrimaryGroupId, null, null, m.Person.CreatedAt))
             .ToListAsync();
 
         return Ok(members);

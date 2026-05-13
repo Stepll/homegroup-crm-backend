@@ -32,9 +32,10 @@ HomeGroup.API/
       Role.cs                    — Id, Name, Color, PermissionsJson, IsSystem, IsDefault
       User.cs                    — Id, Email, PasswordHash, Name, LastName,
                                    PrimaryGroupId, UserRoles[], UserHomeGroups[]
-      Person.cs                  — Id, Name, LastName, Phone, Email, Notes, Status,
+      Person.cs                  — Id, Name, LastName, Phone, Email, Notes, PersonStatusId?,
                                    OversightInfo, OversightUserId, DateOfBirth,
                                    PrimaryGroupId, CreatedAt
+      PersonStatus.cs            — Id, Name, Color, CreatedAt
       HomeGroupEntity.cs         — Id, Name, Description, Color, MeetingDay/Time,
                                    Location, LeaderId, TelegramGroupId,
                                    NextMeetingOverrideDate, IsActive
@@ -195,6 +196,14 @@ POST   /api/v1/plan-templates       — { name, blocks: [{order, time, title, in
 DELETE /api/v1/plan-templates/:id
 ```
 
+### Person Statuses
+```
+GET    /api/v1/person-statuses
+POST   /api/v1/person-statuses      — { name, color }
+PUT    /api/v1/person-statuses/:id  — { name, color }
+DELETE /api/v1/person-statuses/:id
+```
+
 ## Key Patterns
 
 ### Superuser (id = 0)
@@ -223,6 +232,7 @@ DELETE /api/v1/plan-templates/:id
 6. `AddPlanning` — PlanTemplate, PlanTemplateBlock, HomeMeetingPlan, MeetingPlanBlock
 7. `AddTelegramGroupId` — HomeGroupEntity.TelegramGroupId
 8. `AddNextMeetingOverrideAndMeetingMeta` — HomeGroupEntity.NextMeetingOverrideDate + AttendanceMeta table
+9. `AddPersonStatuses` — PersonStatuses table + Person.PersonStatusId FK (replaces string Status)
 
 ## Development Commands
 
@@ -282,10 +292,10 @@ Nginx проксує на контейнер. SSL через Certbot + Let's Enc
 - [x] Plan Templates (глобальні шаблони)
 - [x] Group Stats endpoint (per-period: summary, per-meeting, per-person)
 - [x] Docker + Nginx + SSL deployment
+- [x] Person Statuses CRUD (configurable, color + name, FK on Person)
 
 ## TODO
 
-- [ ] Статуси (configurable) — зараз хардкод "Active"
 - [ ] Опіка (Oversight) — configurable list
 - [ ] Реальний enforcement прав доступу на основі Role.PermissionsJson
 - [ ] Admins CRUD (Users management)
