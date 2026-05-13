@@ -11,6 +11,7 @@ public class HomeGroupEntity
     public string? Location { get; set; }
     public long? LeaderId { get; set; }
     public Person? Leader { get; set; }
+    public string? TelegramGroupId { get; set; }
     public bool IsActive { get; set; } = true;
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 

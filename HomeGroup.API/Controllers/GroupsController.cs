@@ -24,7 +24,7 @@ public class GroupsController(AppDbContext db) : ControllerBase
             .Select(g => new GroupResponse(
                 g.Id, g.Name, g.Description, g.Color, g.MeetingDay, g.MeetingTime, g.Location,
                 g.LeaderId, g.Leader != null ? g.Leader.Name : null,
-                g.IsActive, g.Members.Count))
+                g.IsActive, g.Members.Count, g.TelegramGroupId))
             .ToListAsync();
 
         return Ok(groups);
@@ -42,7 +42,7 @@ public class GroupsController(AppDbContext db) : ControllerBase
 
         return Ok(new GroupResponse(
             group.Id, group.Name, group.Description, group.Color, group.MeetingDay, group.MeetingTime, group.Location,
-            group.LeaderId, group.Leader?.Name, group.IsActive, group.Members.Count));
+            group.LeaderId, group.Leader?.Name, group.IsActive, group.Members.Count, group.TelegramGroupId));
     }
 
     [HttpGet("{id}/members")]
@@ -70,13 +70,14 @@ public class GroupsController(AppDbContext db) : ControllerBase
             MeetingTime = request.MeetingTime,
             Location = request.Location,
             LeaderId = request.LeaderId,
+            TelegramGroupId = request.TelegramGroupId,
         };
 
         db.HomeGroups.Add(group);
         await db.SaveChangesAsync();
 
         return CreatedAtAction(nameof(GetById), new { id = group.Id },
-            new GroupResponse(group.Id, group.Name, group.Description, group.Color, group.MeetingDay, group.MeetingTime, group.Location, group.LeaderId, null, group.IsActive, 0));
+            new GroupResponse(group.Id, group.Name, group.Description, group.Color, group.MeetingDay, group.MeetingTime, group.Location, group.LeaderId, null, group.IsActive, 0, group.TelegramGroupId));
     }
 
     [HttpPut("{id}")]
@@ -93,9 +94,10 @@ public class GroupsController(AppDbContext db) : ControllerBase
         group.Location = request.Location;
         group.LeaderId = request.LeaderId;
         group.IsActive = request.IsActive;
+        group.TelegramGroupId = request.TelegramGroupId;
 
         await db.SaveChangesAsync();
-        return Ok(new GroupResponse(group.Id, group.Name, group.Description, group.Color, group.MeetingDay, group.MeetingTime, group.Location, group.LeaderId, group.Leader?.Name, group.IsActive, group.Members.Count));
+        return Ok(new GroupResponse(group.Id, group.Name, group.Description, group.Color, group.MeetingDay, group.MeetingTime, group.Location, group.LeaderId, group.Leader?.Name, group.IsActive, group.Members.Count, group.TelegramGroupId));
     }
 
     [HttpDelete("{id}")]
@@ -344,6 +346,7 @@ public class GroupsController(AppDbContext db) : ControllerBase
         var nextMeeting = ComputeNextMeeting(group.MeetingDay, group.MeetingTime, today, nowTime);
         var lastMeeting = ComputeLastMeeting(group.MeetingDay, group.MeetingTime, today, nowTime);
 
+
         // Last attendance summary
         CabinetAttendanceSummary? lastAttendance = null;
         if (lastMeeting.HasValue)
@@ -384,7 +387,8 @@ public class GroupsController(AppDbContext db) : ControllerBase
         // Org team: users whose primary group is this group, excluding superadmin (id=0)
         var orgAdmins = await db.Users
             .Where(u => u.PrimaryGroupId == id && u.Id != 0)
-            .Select(u => new { u.Id, u.Name, u.LastName, u.Email })
+            .Include(u => u.UserRoles)
+            .ThenInclude(ur => ur.Role)
             .ToListAsync();
 
         var adminIds = orgAdmins.Select(a => a.Id).ToList();
@@ -399,7 +403,9 @@ public class GroupsController(AppDbContext db) : ControllerBase
                 .Where(p => p.OversightUserId == a.Id)
                 .Select(p => new CabinetOverseePerson(p.Id, $"{p.Name}{(p.LastName is null ? "" : " " + p.LastName)}"))
                 .ToList();
-            return new CabinetOrgMember(a.Id, a.Name, a.LastName, a.Email, myOversees.Count, myOversees);
+            var primaryRole = a.UserRoles.Select(ur => ur.Role).FirstOrDefault();
+            var roleTag = primaryRole is null ? null : new CabinetRoleTag(primaryRole.Name, primaryRole.Color);
+            return new CabinetOrgMember(a.Id, a.Name, a.LastName, a.Email, myOversees.Count, myOversees, roleTag);
         }).ToList();
 
         // Stats
@@ -417,14 +423,19 @@ public class GroupsController(AppDbContext db) : ControllerBase
 
         var stats = new CabinetStats(Math.Round(avgRate, 1), newThisMonth, totalMembers);
 
+        var nextMeetingStr = nextMeeting?.ToString("yyyy-MM-dd");
+        var hasPlan = nextMeetingStr != null && await db.MeetingPlans
+            .AnyAsync(p => p.HomeGroupId == id && p.MeetingDate == nextMeetingStr);
+
         return Ok(new GroupCabinetResponse(
-            new CabinetGroupInfo(group.Id, group.Name, group.Color, group.MeetingDay, group.MeetingTime, group.Location),
-            nextMeeting?.ToString("yyyy-MM-dd"),
+            new CabinetGroupInfo(group.Id, group.Name, group.Color, group.MeetingDay, group.MeetingTime, group.Location, group.TelegramGroupId),
+            nextMeetingStr,
             lastMeeting?.ToString("yyyy-MM-dd"),
             lastAttendance,
             upcomingEvents,
             orgTeam,
-            stats));
+            stats,
+            hasPlan));
     }
 
     // ── Event helpers ─────────────────────────────────────────────────────────
