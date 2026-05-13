@@ -65,10 +65,11 @@ public class PeopleController(AppDbContext db) : ControllerBase
         var statusDto = person.PersonStatus is null ? null : new PersonStatusDto(person.PersonStatus.Id, person.PersonStatus.Name, person.PersonStatus.Color);
 
         return Ok(new PersonDetailResponse(
-            person.Id, person.Name, person.LastName, person.Phone, person.Email, person.Notes,
+            person.Id, person.Name, person.LastName, person.Phone, person.Email, person.Telegram, person.Notes,
+            person.Gender, person.MaritalStatus, person.Address, person.DateOfBirth,
+            person.IsBaptized, person.Church, person.Ministry, person.IsBaptizedWithSpirit,
             statusDto, person.OversightInfo, person.OversightUserId,
             person.OversightUser is null ? null : $"{person.OversightUser.Name}{(person.OversightUser.LastName is null ? "" : " " + person.OversightUser.LastName)}",
-            person.DateOfBirth,
             person.PrimaryGroupId, person.PrimaryGroup?.Name,
             person.CreatedAt,
             await GetCustomFields(id, person.PrimaryGroupId)));
@@ -92,8 +93,10 @@ public class PeopleController(AppDbContext db) : ControllerBase
         await db.Entry(person).Reference(p => p.PrimaryGroup).LoadAsync();
 
         return CreatedAtAction(nameof(GetById), new { id = person.Id }, new PersonDetailResponse(
-            person.Id, person.Name, person.LastName, person.Phone, person.Email, person.Notes,
-            null, person.OversightInfo, null, null, person.DateOfBirth,
+            person.Id, person.Name, person.LastName, person.Phone, person.Email, person.Telegram, person.Notes,
+            person.Gender, person.MaritalStatus, person.Address, person.DateOfBirth,
+            person.IsBaptized, person.Church, person.Ministry, person.IsBaptizedWithSpirit,
+            null, person.OversightInfo, null, null,
             person.PrimaryGroupId, person.PrimaryGroup?.Name,
             person.CreatedAt, []));
     }
@@ -115,11 +118,19 @@ public class PeopleController(AppDbContext db) : ControllerBase
         person.LastName = request.LastName?.Trim();
         person.Phone = request.Phone?.Trim();
         person.Email = request.Email?.Trim();
+        person.Telegram = request.Telegram?.Trim();
         person.Notes = request.Notes?.Trim();
+        person.Gender = request.Gender;
+        person.MaritalStatus = request.MaritalStatus;
+        person.Address = request.Address?.Trim();
+        person.DateOfBirth = request.DateOfBirth;
+        person.IsBaptized = request.IsBaptized;
+        person.Church = request.Church?.Trim();
+        person.Ministry = request.Ministry?.Trim();
+        person.IsBaptizedWithSpirit = request.IsBaptizedWithSpirit;
         person.PersonStatusId = request.PersonStatusId;
         person.OversightInfo = request.OversightInfo?.Trim();
         person.OversightUserId = request.OversightUserId;
-        person.DateOfBirth = request.DateOfBirth;
         person.PrimaryGroupId = request.PrimaryGroupId;
 
         // Sync HomeGroupMembers when primary group changes
@@ -146,10 +157,11 @@ public class PeopleController(AppDbContext db) : ControllerBase
         var updatedStatusDto = person.PersonStatus is null ? null : new PersonStatusDto(person.PersonStatus.Id, person.PersonStatus.Name, person.PersonStatus.Color);
 
         return Ok(new PersonDetailResponse(
-            person.Id, person.Name, person.LastName, person.Phone, person.Email, person.Notes,
+            person.Id, person.Name, person.LastName, person.Phone, person.Email, person.Telegram, person.Notes,
+            person.Gender, person.MaritalStatus, person.Address, person.DateOfBirth,
+            person.IsBaptized, person.Church, person.Ministry, person.IsBaptizedWithSpirit,
             updatedStatusDto, person.OversightInfo, person.OversightUserId,
             person.OversightUser is null ? null : $"{person.OversightUser.Name}{(person.OversightUser.LastName is null ? "" : " " + person.OversightUser.LastName)}",
-            person.DateOfBirth,
             person.PrimaryGroupId, person.PrimaryGroup?.Name,
             person.CreatedAt,
             await GetCustomFields(id, person.PrimaryGroupId)));

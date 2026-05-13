@@ -7,13 +7,26 @@ public class Person
     public string? LastName { get; set; }
     public string? Phone { get; set; }
     public string? Email { get; set; }
+    public string? Telegram { get; set; }
     public string? Notes { get; set; }
+    public string? Gender { get; set; }
+    public string? MaritalStatus { get; set; }
+    public string? Address { get; set; }
+    public DateOnly? DateOfBirth { get; set; }
+
+    // Церква
+    public bool IsBaptized { get; set; }
+    public string? Church { get; set; }
+    public string? Ministry { get; set; }
+    public bool IsBaptizedWithSpirit { get; set; }
+
+    // Опіка
     public long? PersonStatusId { get; set; }
     public PersonStatus? PersonStatus { get; set; }
     public string? OversightInfo { get; set; }
     public long? OversightUserId { get; set; }
     public User? OversightUser { get; set; }
-    public DateOnly? DateOfBirth { get; set; }
+
     public long? PrimaryGroupId { get; set; }
     public HomeGroupEntity? PrimaryGroup { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
