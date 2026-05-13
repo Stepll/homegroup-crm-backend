@@ -10,7 +10,7 @@ public record AddMemberRequest(long PersonId, string Role = "Member");
 
 public record SyncMembersRequest(List<long> PersonIds);
 
-public record SetNextMeetingRequest(string? Date);
+public record SetNextMeetingRequest(string? Date, string? OldDate = null);
 
 public record GroupCustomFieldDto(long Id, string Name);
 

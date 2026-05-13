@@ -450,8 +450,42 @@ public class GroupsController(AppDbContext db) : ControllerBase
         var group = await db.HomeGroups.FirstOrDefaultAsync(g => g.Id == id);
         if (group is null) return NotFound();
         group.NextMeetingOverrideDate = request.Date;
+
+        // Move plan from old date to new date if both are provided
+        if (!string.IsNullOrEmpty(request.OldDate) && !string.IsNullOrEmpty(request.Date))
+        {
+            var plan = await db.MeetingPlans
+                .FirstOrDefaultAsync(p => p.HomeGroupId == id && p.MeetingDate == request.OldDate);
+            if (plan is not null)
+            {
+                // Remove any existing plan for the new date to avoid unique conflict
+                var existing = await db.MeetingPlans
+                    .Include(p => p.Blocks)
+                    .FirstOrDefaultAsync(p => p.HomeGroupId == id && p.MeetingDate == request.Date);
+                if (existing is not null)
+                {
+                    db.MeetingPlanBlocks.RemoveRange(existing.Blocks);
+                    db.MeetingPlans.Remove(existing);
+                }
+                plan.MeetingDate = request.Date;
+            }
+        }
+
         await db.SaveChangesAsync();
         return Ok();
+    }
+
+    [HttpDelete("{id}/plans/date/{date}")]
+    public async Task<IActionResult> DeletePlanByDate(long id, string date)
+    {
+        var plan = await db.MeetingPlans
+            .Include(p => p.Blocks)
+            .FirstOrDefaultAsync(p => p.HomeGroupId == id && p.MeetingDate == date);
+        if (plan is null) return NotFound();
+        db.MeetingPlanBlocks.RemoveRange(plan.Blocks);
+        db.MeetingPlans.Remove(plan);
+        await db.SaveChangesAsync();
+        return NoContent();
     }
 
     // ── Event helpers ─────────────────────────────────────────────────────────
