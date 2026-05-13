@@ -475,6 +475,39 @@ public class GroupsController(AppDbContext db) : ControllerBase
         return Ok();
     }
 
+    [HttpPut("{id}/skip-meeting")]
+    public async Task<ActionResult<object>> SkipMeeting(long id)
+    {
+        var group = await db.HomeGroups.FirstOrDefaultAsync(g => g.Id == id);
+        if (group is null) return NotFound();
+
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var nowTime = TimeOnly.FromDateTime(DateTime.UtcNow);
+
+        // Determine current next meeting (override or computed)
+        DateOnly currentNext;
+        if (group.NextMeetingOverrideDate is not null
+            && DateOnly.TryParse(group.NextMeetingOverrideDate, out var overrideDate)
+            && overrideDate >= today)
+        {
+            currentNext = overrideDate;
+        }
+        else
+        {
+            var computed = ComputeNextMeeting(group.MeetingDay, group.MeetingTime, today, nowTime);
+            if (computed is null) return BadRequest(new { message = "Не вказано день тижня для домашки" });
+            currentNext = computed.Value;
+        }
+
+        // Find next occurrence of meeting day AFTER currentNext
+        var nextAfter = ComputeNextMeeting(group.MeetingDay, group.MeetingTime, currentNext, TimeOnly.MinValue);
+        if (nextAfter is null) return BadRequest(new { message = "Не вказано день тижня для домашки" });
+
+        group.NextMeetingOverrideDate = nextAfter.Value.ToString("yyyy-MM-dd");
+        await db.SaveChangesAsync();
+        return Ok(new { date = group.NextMeetingOverrideDate });
+    }
+
     [HttpDelete("{id}/plans/date/{date}")]
     public async Task<IActionResult> DeletePlanByDate(long id, string date)
     {
