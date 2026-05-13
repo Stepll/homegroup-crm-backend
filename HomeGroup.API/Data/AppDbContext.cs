@@ -75,8 +75,26 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             .IsUnique();
 
         modelBuilder.Entity<Attendance>()
+            .HasOne(a => a.Person)
+            .WithMany(p => p.Attendances)
+            .HasForeignKey(a => a.PersonId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<Attendance>()
+            .HasOne(a => a.User)
+            .WithMany()
+            .HasForeignKey(a => a.UserId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<Attendance>()
             .HasIndex(a => new { a.PersonId, a.HomeGroupId, a.MeetingDate })
-            .IsUnique();
+            .IsUnique()
+            .HasFilter("\"PersonId\" IS NOT NULL");
+
+        modelBuilder.Entity<Attendance>()
+            .HasIndex(a => new { a.UserId, a.HomeGroupId, a.MeetingDate })
+            .IsUnique()
+            .HasFilter("\"UserId\" IS NOT NULL");
 
         modelBuilder.Entity<AttendanceMeta>()
             .HasOne(m => m.HomeGroup)
@@ -110,6 +128,12 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             .HasOne(p => p.PersonStatus)
             .WithMany()
             .HasForeignKey(p => p.PersonStatusId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        modelBuilder.Entity<User>()
+            .HasOne(u => u.PersonStatus)
+            .WithMany()
+            .HasForeignKey(u => u.PersonStatusId)
             .OnDelete(DeleteBehavior.SetNull);
 
         modelBuilder.Entity<HomeGroupCustomField>()

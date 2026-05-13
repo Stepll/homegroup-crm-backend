@@ -1,3 +1,5 @@
+using HomeGroup.API.Models.DTOs.PersonStatuses;
+
 namespace HomeGroup.API.Models.DTOs.Admins;
 
 public record RoleTagDto(long Id, string Name, string Color);
@@ -14,7 +16,20 @@ public record AdminResponse(
     string? PrimaryGroupName,
     string? PrimaryGroupColor,
     List<GroupTagDto> VisibleGroups,
-    DateTime CreatedAt);
+    DateTime CreatedAt,
+    // Profile fields
+    string? Phone,
+    string? Telegram,
+    string? Notes,
+    string? Gender,
+    string? MaritalStatus,
+    string? Address,
+    string? DateOfBirth,
+    bool IsBaptized,
+    string? Church,
+    string? Ministry,
+    bool IsBaptizedWithSpirit,
+    PersonStatusDto? Status);
 
 public record CreateAdminRequest(
     string Name,
@@ -32,5 +47,19 @@ public record UpdateAdminRequest(
     List<long> RoleIds,
     long? PrimaryGroupId,
     List<long> VisibleGroupIds);
+
+public record UpdateAdminProfileRequest(
+    string? Phone,
+    string? Telegram,
+    string? Notes,
+    string? Gender,
+    string? MaritalStatus,
+    string? Address,
+    string? DateOfBirth,
+    bool IsBaptized,
+    string? Church,
+    string? Ministry,
+    bool IsBaptizedWithSpirit,
+    long? PersonStatusId);
 
 public record SetPasswordRequest(string NewPassword);

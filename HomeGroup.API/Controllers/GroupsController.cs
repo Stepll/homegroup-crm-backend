@@ -47,18 +47,42 @@ public class GroupsController(AppDbContext db) : ControllerBase
     }
 
     [HttpGet("{id}/members")]
-    public async Task<ActionResult<List<PersonResponse>>> GetMembers(long id)
+    public async Task<ActionResult<List<GroupMemberResponse>>> GetMembers(long id)
     {
-        var members = await db.HomeGroupMembers
+        var personMembers = await db.HomeGroupMembers
             .Where(m => m.HomeGroupId == id)
             .Include(m => m.Person).ThenInclude(p => p.PersonStatus)
+            .Include(m => m.Person).ThenInclude(p => p.PrimaryGroup)
             .OrderBy(m => m.Person.Name)
-            .Select(m => new PersonResponse(m.Person.Id, m.Person.Name, m.Person.LastName, m.Person.Phone, m.Person.Email, m.Person.Notes,
+            .Select(m => new GroupMemberResponse(
+                m.Person.Id, m.Person.Name, m.Person.LastName, m.Person.Phone, m.Person.Email, m.Person.Notes,
                 m.Person.PersonStatus != null ? new PersonStatusDto(m.Person.PersonStatus.Id, m.Person.PersonStatus.Name, m.Person.PersonStatus.Color) : null,
-                m.Person.PrimaryGroupId, null, null, m.Person.CreatedAt))
+                m.Person.PrimaryGroupId, m.Person.PrimaryGroup != null ? m.Person.PrimaryGroup.Name : null,
+                m.Person.PrimaryGroup != null ? m.Person.PrimaryGroup.Color : null,
+                m.Person.CreatedAt, false, null, null))
             .ToListAsync();
 
-        return Ok(members);
+        var adminMembers = await db.Users
+            .Where(u => u.PrimaryGroupId == id && u.Id != 0)
+            .Include(u => u.UserRoles).ThenInclude(ur => ur.Role)
+            .Include(u => u.PersonStatus)
+            .Include(u => u.PrimaryGroup)
+            .OrderBy(u => u.Name)
+            .ToListAsync();
+
+        var adminResponses = adminMembers.Select(u =>
+        {
+            var primaryRole = u.UserRoles.Select(ur => ur.Role).FirstOrDefault();
+            var roleTag = primaryRole is null ? null : new MemberRoleTagDto(primaryRole.Name, primaryRole.Color);
+            var status = u.PersonStatus is null ? null : new PersonStatusDto(u.PersonStatus.Id, u.PersonStatus.Name, u.PersonStatus.Color);
+            return new GroupMemberResponse(
+                u.Id, u.Name, u.LastName, u.Phone, u.Email, u.Notes,
+                status, u.PrimaryGroupId, u.PrimaryGroup?.Name, u.PrimaryGroup?.Color,
+                u.CreatedAt, true, u.Id, roleTag);
+        }).ToList();
+
+        var all = personMembers.Concat(adminResponses).OrderBy(m => m.Name).ToList();
+        return Ok(all);
     }
 
     [HttpPost]
@@ -463,6 +487,7 @@ public class GroupsController(AppDbContext db) : ControllerBase
 
         var attendance = await db.Attendances
             .Include(a => a.Person)
+            .Include(a => a.User)
             .Where(a => a.HomeGroupId == id && a.MeetingDate >= periodStart)
             .OrderBy(a => a.MeetingDate)
             .ToListAsync();
@@ -480,7 +505,7 @@ public class GroupsController(AppDbContext db) : ControllerBase
             var totalMembers = g.Count();
             var guestCount = metaLookup.GetValueOrDefault(g.Key, 0);
             var absentees = g.Where(a => !a.WasPresent)
-                .Select(a => $"{a.Person.Name}{(a.Person.LastName is null ? "" : " " + a.Person.LastName)}")
+                .Select(a => AttendanceMemberName(a))
                 .OrderBy(n => n)
                 .ToList();
             return new MeetingStatsItem(
@@ -494,13 +519,19 @@ public class GroupsController(AppDbContext db) : ControllerBase
 
         // Per-person stats
         var personStats = attendance
-            .GroupBy(a => new { a.PersonId, Name = $"{a.Person.Name}{(a.Person.LastName is null ? "" : " " + a.Person.LastName)}" })
+            .GroupBy(a => new {
+                Key = a.PersonId.HasValue ? $"p{a.PersonId}" : $"u{a.UserId}",
+                PersonId = a.PersonId,
+                UserId = a.UserId,
+                Name = AttendanceMemberName(a)
+            })
             .Select(g =>
             {
                 var present = g.Count(a => a.WasPresent);
                 var total = g.Count();
                 return new PersonAttendanceStat(
                     g.Key.PersonId,
+                    g.Key.UserId,
                     g.Key.Name,
                     present,
                     total,
@@ -597,6 +628,17 @@ public class GroupsController(AppDbContext db) : ControllerBase
         db.MeetingPlans.Remove(plan);
         await db.SaveChangesAsync();
         return NoContent();
+    }
+
+    // ── Attendance helpers ────────────────────────────────────────────────────
+
+    private static string AttendanceMemberName(Attendance a)
+    {
+        if (a.Person is not null)
+            return $"{a.Person.Name}{(a.Person.LastName is null ? "" : " " + a.Person.LastName)}";
+        if (a.User is not null)
+            return $"{a.User.Name}{(a.User.LastName is null ? "" : " " + a.User.LastName)}";
+        return "?";
     }
 
     // ── Event helpers ─────────────────────────────────────────────────────────

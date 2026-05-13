@@ -21,6 +21,7 @@ public class AttendanceController(AppDbContext db) : ControllerBase
     {
         var query = db.Attendances
             .Include(a => a.Person)
+            .Include(a => a.User)
             .Where(a => a.HomeGroupId == groupId);
 
         if (from.HasValue) query = query.Where(a => a.MeetingDate >= from.Value);
@@ -28,10 +29,12 @@ public class AttendanceController(AppDbContext db) : ControllerBase
 
         var records = await query
             .OrderByDescending(a => a.MeetingDate)
-            .Select(a => new AttendanceResponse(a.Id, a.PersonId, a.Person.Name, a.HomeGroupId, a.MeetingDate, a.WasPresent, a.Notes))
             .ToListAsync();
 
-        return Ok(records);
+        return Ok(records.Select(a => new AttendanceResponse(
+            a.Id, a.PersonId, a.UserId,
+            MemberName(a),
+            a.HomeGroupId, a.MeetingDate, a.WasPresent, a.Notes)));
     }
 
     [HttpGet("summary")]
@@ -60,9 +63,12 @@ public class AttendanceController(AppDbContext db) : ControllerBase
 
         foreach (var entry in request.Entries)
         {
+            if (entry.PersonId is null && entry.UserId is null) continue;
+
             var existing = await db.Attendances.FirstOrDefaultAsync(a =>
                 a.HomeGroupId == request.HomeGroupId &&
                 a.PersonId == entry.PersonId &&
+                a.UserId == entry.UserId &&
                 a.MeetingDate == request.MeetingDate);
 
             if (existing is not null)
@@ -76,6 +82,7 @@ public class AttendanceController(AppDbContext db) : ControllerBase
                 {
                     HomeGroupId = request.HomeGroupId,
                     PersonId = entry.PersonId,
+                    UserId = entry.UserId,
                     MeetingDate = request.MeetingDate,
                     WasPresent = entry.WasPresent,
                     Notes = entry.Notes,
@@ -120,5 +127,14 @@ public class AttendanceController(AppDbContext db) : ControllerBase
 
         await db.SaveChangesAsync();
         return Ok();
+    }
+
+    private static string MemberName(Attendance a)
+    {
+        if (a.Person is not null)
+            return $"{a.Person.Name}{(a.Person.LastName is null ? "" : " " + a.Person.LastName)}";
+        if (a.User is not null)
+            return $"{a.User.Name}{(a.User.LastName is null ? "" : " " + a.User.LastName)}";
+        return "?";
     }
 }

@@ -20,7 +20,8 @@ public record MeetingStatsItem(
     List<string> Absentees);
 
 public record PersonAttendanceStat(
-    long PersonId,
+    long? PersonId,
+    long? UserId,
     string FullName,
     int PresentCount,
     int TotalMeetings,
