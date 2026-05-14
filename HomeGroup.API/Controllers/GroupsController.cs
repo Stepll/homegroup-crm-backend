@@ -837,7 +837,28 @@ public class GroupsController(AppDbContext db) : ControllerBase
         var recurringEvent = await db.CalendarEvents
             .FirstOrDefaultAsync(e => e.Type == CalendarEventType.HomeGroup && e.IsRecurring && e.HomeGroupId == id);
         if (recurringEvent != null)
+        {
             recurringEvent.RoomId = request.AutoBook ? request.RoomId : null;
+        }
+        else if (request.AutoBook && !string.IsNullOrEmpty(group.MeetingDay)
+                 && UkrDays.TryGetValue(group.MeetingDay, out var recurDow))
+        {
+            // Recurring event missing (group predates calendar feature) — create it now
+            TimeOnly.TryParse(group.MeetingTime, out var rStart);
+            TimeOnly? rEnd = TimeOnly.TryParse(group.MeetingEndTime, out var rEt) ? rEt : null;
+            db.CalendarEvents.Add(new CalendarEvent
+            {
+                Title = group.Name,
+                Location = group.Location,
+                Type = CalendarEventType.HomeGroup,
+                HomeGroupId = id,
+                IsRecurring = true,
+                RecurringDayOfWeek = (int)recurDow,
+                StartTime = rStart == default ? null : rStart,
+                EndTime = rEnd,
+                RoomId = request.RoomId,
+            });
+        }
 
         var booking = await db.CalendarEvents
             .FirstOrDefaultAsync(e => e.Type == CalendarEventType.HomeGroup
