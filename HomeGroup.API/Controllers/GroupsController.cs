@@ -102,6 +102,7 @@ public class GroupsController(AppDbContext db) : ControllerBase
 
         db.HomeGroups.Add(group);
         await db.SaveChangesAsync();
+        await SyncGroupCalendarEvent(group, db);
 
         return CreatedAtAction(nameof(GetById), new { id = group.Id },
             new GroupResponse(group.Id, group.Name, group.Description, group.Color, group.MeetingDay, group.MeetingTime, group.Location, group.LeaderId, null, group.IsActive, 0, group.TelegramGroupId));
@@ -124,6 +125,7 @@ public class GroupsController(AppDbContext db) : ControllerBase
         group.TelegramGroupId = request.TelegramGroupId;
 
         await db.SaveChangesAsync();
+        await SyncGroupCalendarEvent(group, db);
         return Ok(new GroupResponse(group.Id, group.Name, group.Description, group.Color, group.MeetingDay, group.MeetingTime, group.Location, group.LeaderId, group.Leader?.Name, group.IsActive, group.Members.Count, group.TelegramGroupId));
     }
 
@@ -697,5 +699,47 @@ public class GroupsController(AppDbContext db) : ControllerBase
         }
 
         return today.AddDays(-daysAgo == 0 ? -7 : -daysAgo);
+    }
+
+    private static async Task SyncGroupCalendarEvent(HomeGroupEntity group, AppDbContext db)
+    {
+        var existing = await db.CalendarEvents
+            .FirstOrDefaultAsync(e => e.Type == CalendarEventType.HomeGroup && e.HomeGroupId == group.Id);
+
+        var hasMeeting = !string.IsNullOrEmpty(group.MeetingDay) &&
+                         UkrDays.TryGetValue(group.MeetingDay, out var dow);
+
+        if (hasMeeting)
+        {
+            UkrDays.TryGetValue(group.MeetingDay!, out var dayOfWeek);
+            TimeOnly.TryParse(group.MeetingTime, out var startTime);
+
+            if (existing is null)
+            {
+                db.CalendarEvents.Add(new CalendarEvent
+                {
+                    Title = group.Name,
+                    Location = group.Location,
+                    Type = CalendarEventType.HomeGroup,
+                    HomeGroupId = group.Id,
+                    IsRecurring = true,
+                    RecurringDayOfWeek = (int)dayOfWeek,
+                    StartTime = startTime == default ? null : startTime,
+                });
+            }
+            else
+            {
+                existing.Title = group.Name;
+                existing.Location = group.Location;
+                existing.RecurringDayOfWeek = (int)dayOfWeek;
+                existing.StartTime = startTime == default ? null : startTime;
+            }
+        }
+        else if (existing is not null)
+        {
+            db.CalendarEvents.Remove(existing);
+        }
+
+        await db.SaveChangesAsync();
     }
 }

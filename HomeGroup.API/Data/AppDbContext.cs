@@ -17,7 +17,8 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<HomeGroupCustomField> HomeGroupCustomFields => Set<HomeGroupCustomField>();
     public DbSet<PersonCustomFieldValue> PersonCustomFieldValues => Set<PersonCustomFieldValue>();
     public DbSet<GroupEvent> GroupEvents => Set<GroupEvent>();
-    public DbSet<ChurchEvent> ChurchEvents => Set<ChurchEvent>();
+    public DbSet<Room> Rooms => Set<Room>();
+    public DbSet<CalendarEvent> CalendarEvents => Set<CalendarEvent>();
     public DbSet<PlanTemplate> PlanTemplates => Set<PlanTemplate>();
     public DbSet<PlanTemplateBlock> PlanTemplateBlocks => Set<PlanTemplateBlock>();
     public DbSet<HomeMeetingPlan> MeetingPlans => Set<HomeMeetingPlan>();
@@ -159,6 +160,18 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             .IsUnique();
 
         modelBuilder.Entity<GroupEvent>()
+            .HasOne(e => e.HomeGroup)
+            .WithMany()
+            .HasForeignKey(e => e.HomeGroupId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<CalendarEvent>()
+            .HasOne(e => e.Room)
+            .WithMany()
+            .HasForeignKey(e => e.RoomId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        modelBuilder.Entity<CalendarEvent>()
             .HasOne(e => e.HomeGroup)
             .WithMany()
             .HasForeignKey(e => e.HomeGroupId)

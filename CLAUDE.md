@@ -24,7 +24,8 @@ HomeGroup.API/
     PersonStatusesController.cs  — /api/v1/person-statuses (CRUD)
     RolesController.cs           — /api/v1/roles (CRUD, system role protection)
     AttendanceController.cs      — /api/v1/attendance (records + meta)
-    ChurchEventsController.cs    — /api/v1/church-events (global church calendar)
+    CalendarController.cs        — /api/v1/calendar (occurrences GET + events CRUD)
+    RoomsController.cs           — /api/v1/rooms (CRUD)
     PlanTemplatesController.cs   — /api/v1/plan-templates (global meeting templates)
   Data/
     AppDbContext.cs               — EF Core context, OnModelCreating, role seeds
@@ -58,7 +59,11 @@ HomeGroup.API/
       HomeGroupCustomField.cs    — Id, HomeGroupId, Name, CreatedAt
       PersonCustomFieldValue.cs  — Id, PersonId, FieldId, Value
       GroupEvent.cs              — Id, HomeGroupId, Name, Month, Day, Year?, CreatedAt
-      ChurchEvent.cs             — Id, Name, Month, Day, CreatedAt
+      Room.cs                    — Id, Name
+      CalendarEvent.cs           — Id, Title, Description?, Location?, RoomId?,
+                                   Type (Recurring|Global|HomeGroup), HomeGroupId?,
+                                   IsRecurring, RecurringDayOfWeek? (int, 0=Sun..6=Sat),
+                                   StartTime?, EndTime?, Date?, CreatedAt
       PlanTemplate.cs            — Id, Name, Blocks[], CreatedAt
       PlanTemplateBlock.cs       — Id, TemplateId, Order, Time, Title, Info?, Responsible?
       HomeMeetingPlan.cs         — Id, HomeGroupId, MeetingDate, AppliedTemplateName?, Blocks[], UpdatedAt
@@ -216,11 +221,24 @@ GET  /api/v1/attendance/meta        — ?groupId=&date= → { guestCount, guestI
 POST /api/v1/attendance/meta        — { homeGroupId, meetingDate, guestCount, guestInfo? }
 ```
 
-### Church Events
+### Calendar
 ```
-GET    /api/v1/church-events
-POST   /api/v1/church-events        — { name, month, day }
-DELETE /api/v1/church-events/:id
+GET    /api/v1/calendar             — ?from=yyyy-MM-dd&to=yyyy-MM-dd&types=Recurring,Global,HomeGroup&groupIds=1,2
+                                      → CalendarOccurrenceDto[] (recurring events expanded per day)
+GET    /api/v1/calendar/events      → CalendarEventDto[] (all event definitions)
+GET    /api/v1/calendar/events/:id  → CalendarEventDto
+POST   /api/v1/calendar/events      — { title, description?, location?, roomId?, type, homeGroupId?,
+                                        isRecurring, recurringDayOfWeek?, startTime?, endTime?, date? }
+PUT    /api/v1/calendar/events/:id
+DELETE /api/v1/calendar/events/:id
+```
+
+### Rooms
+```
+GET    /api/v1/rooms
+POST   /api/v1/rooms                — { name }
+PUT    /api/v1/rooms/:id            — { name }
+DELETE /api/v1/rooms/:id
 ```
 
 ### Plan Templates
@@ -285,6 +303,8 @@ Admins в результаті мають `IsAdmin=true` і `UserId` (id юзе�
     IsBaptized, Church, Ministry, IsBaptizedWithSpirit, PersonStatusId (FK)
     + Attendance: PersonId → nullable, нове поле UserId (nullable)
     + filtered unique indexes на Attendance (PersonId WHERE NOT NULL, UserId WHERE NOT NULL)
+12. `AddCalendarAndRooms` — Drop ChurchEvents, create Rooms table, create CalendarEvents table
+    (Type: Recurring|Global|HomeGroup, IsRecurring, RecurringDayOfWeek, StartTime, EndTime, Date)
 
 ## Development Commands
 
@@ -353,6 +373,9 @@ Nginx проксує на контейнер. SSL через Certbot + Let's Enc
 - [x] Mixed attendance — Attendance.PersonId nullable + UserId nullable, filtered unique indexes
 - [x] GET /people includeAdmins + myOversight params → GroupMemberResponse[]
 - [x] GET /groups/:id/members includes admins with PrimaryGroupId == groupId
+- [x] Calendar — unified CalendarEvent (Recurring/Global/HomeGroup types, recurring expansion in GET)
+- [x] Rooms CRUD (stub table: Id, Name — booking logic later)
+- [x] Auto-sync CalendarEvent (Type=HomeGroup) on HomeGroup create/update from MeetingDay/MeetingTime
 
 ## TODO
 
