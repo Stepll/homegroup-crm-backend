@@ -471,6 +471,17 @@ public class GroupsController(AppDbContext db) : ControllerBase
 
         if (nextMeetingStr != null && DateOnly.TryParse(nextMeetingStr, out var nextDate))
         {
+            // Cleanup stale past non-recurring booking events for this group
+            var staleBookings = await db.CalendarEvents
+                .Where(e => e.Type == CalendarEventType.HomeGroup && !e.IsRecurring
+                            && e.HomeGroupId == id && e.Date < today)
+                .ToListAsync();
+            if (staleBookings.Count > 0)
+            {
+                db.CalendarEvents.RemoveRange(staleBookings);
+                await db.SaveChangesAsync();
+            }
+
             // Auto-book: ensure booking CalendarEvent exists for next meeting date
             if (group.AutoBookRoomId.HasValue)
             {
