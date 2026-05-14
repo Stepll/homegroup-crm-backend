@@ -1,6 +1,6 @@
 namespace HomeGroup.API.Models.DTOs.Calendar;
 
-public record RoomDto(long Id, string Name);
+public record RoomDto(long Id, string Name, string Building, int Floor, string Color);
 
 public record CalendarEventDto(
     long Id,
@@ -60,4 +60,4 @@ public record UpdateCalendarEventRequest(
     string? EndTime,
     string? Date);
 
-public record RoomRequest(string Name);
+public record RoomRequest(string Name, string Building, int Floor, string Color);

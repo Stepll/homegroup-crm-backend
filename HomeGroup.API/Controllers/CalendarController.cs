@@ -162,7 +162,7 @@ public class CalendarController(AppDbContext db) : ControllerBase
 
     private static CalendarEventDto ToDto(CalendarEvent e) => new(
         e.Id, e.Title, e.Description, e.Location,
-        e.RoomId, e.Room is null ? null : new RoomDto(e.Room.Id, e.Room.Name),
+        e.RoomId, e.Room is null ? null : new RoomDto(e.Room.Id, e.Room.Name, e.Room.Building, e.Room.Floor, e.Room.Color),
         e.Type.ToString(),
         e.HomeGroupId, e.HomeGroup?.Name, e.HomeGroup?.Color,
         e.IsRecurring, e.RecurringDayOfWeek,
@@ -171,7 +171,7 @@ public class CalendarController(AppDbContext db) : ControllerBase
 
     private static CalendarOccurrenceDto ToOccurrence(CalendarEvent e, DateOnly date) => new(
         e.Id, e.Title, e.Description, e.Location,
-        e.RoomId, e.Room is null ? null : new RoomDto(e.Room.Id, e.Room.Name),
+        e.RoomId, e.Room is null ? null : new RoomDto(e.Room.Id, e.Room.Name, e.Room.Building, e.Room.Floor, e.Room.Color),
         e.Type.ToString(),
         e.HomeGroupId, e.HomeGroup?.Name, e.HomeGroup?.Color,
         date.ToString("yyyy-MM-dd"),
