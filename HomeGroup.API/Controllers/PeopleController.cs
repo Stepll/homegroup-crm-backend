@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using HomeGroup.API.Data;
+using HomeGroup.API.Models.DTOs.Groups;
 using HomeGroup.API.Models.DTOs.People;
 using HomeGroup.API.Models.DTOs.PersonStatuses;
 using HomeGroup.API.Models.Entities;
@@ -15,8 +16,25 @@ namespace HomeGroup.API.Controllers;
 public class PeopleController(AppDbContext db) : ControllerBase
 {
     [HttpGet]
-    public async Task<ActionResult<List<PersonResponse>>> GetAll([FromQuery] string? search, [FromQuery] bool noGroup = false)
+    public async Task<ActionResult<List<GroupMemberResponse>>> GetAll(
+        [FromQuery] string? search,
+        [FromQuery] bool noGroup = false,
+        [FromQuery] bool includeAdmins = false,
+        [FromQuery] bool myOversight = false)
     {
+        long.TryParse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value, out var currentUserId);
+        bool isSuperAdmin = currentUserId == 0;
+
+        List<long>? visibleGroupIds = null;
+        if (!isSuperAdmin)
+        {
+            visibleGroupIds = await db.UserHomeGroups
+                .Where(ug => ug.UserId == currentUserId)
+                .Select(ug => ug.HomeGroupId)
+                .ToListAsync();
+        }
+
+        // ── Persons ───────────────────────────────────────────────────────────
         var query = db.People.Include(p => p.PrimaryGroup).Include(p => p.PersonStatus).AsQueryable();
 
         if (!string.IsNullOrWhiteSpace(search))
@@ -28,27 +46,56 @@ public class PeopleController(AppDbContext db) : ControllerBase
         if (noGroup)
             query = query.Where(p => p.PrimaryGroupId == null);
 
-        // Non-superadmin users with visible groups can only see people from those groups
-        if (long.TryParse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value, out var userId) && userId != 0)
-        {
-            var visibleGroupIds = await db.UserHomeGroups
-                .Where(ug => ug.UserId == userId)
-                .Select(ug => ug.HomeGroupId)
-                .ToListAsync();
+        if (myOversight)
+            query = query.Where(p => p.OversightUserId == currentUserId);
 
-            if (visibleGroupIds.Count > 0)
-                query = query.Where(p => p.PrimaryGroupId != null && visibleGroupIds.Contains(p.PrimaryGroupId.Value));
+        if (!isSuperAdmin && visibleGroupIds is { Count: > 0 })
+            query = query.Where(p => p.PrimaryGroupId != null && visibleGroupIds.Contains(p.PrimaryGroupId.Value));
+
+        var persons = await query.OrderBy(p => p.Name).ToListAsync();
+
+        var result = persons.Select(p => new GroupMemberResponse(
+            p.Id, p.Name, p.LastName, p.Phone, p.Email, p.Notes,
+            p.PersonStatus != null ? new PersonStatusDto(p.PersonStatus.Id, p.PersonStatus.Name, p.PersonStatus.Color) : null,
+            p.PrimaryGroupId, p.PrimaryGroup?.Name, p.PrimaryGroup?.Color,
+            p.CreatedAt, false, null, null)).ToList();
+
+        // ── Admins ────────────────────────────────────────────────────────────
+        if (includeAdmins && !myOversight && !noGroup)
+        {
+            var adminQuery = db.Users
+                .Where(u => u.Id != 0 && u.PrimaryGroupId != null)
+                .Include(u => u.UserRoles).ThenInclude(ur => ur.Role)
+                .Include(u => u.PersonStatus)
+                .Include(u => u.PrimaryGroup)
+                .AsQueryable();
+
+            if (!isSuperAdmin && visibleGroupIds is not null)
+                adminQuery = adminQuery.Where(u => visibleGroupIds.Contains(u.PrimaryGroupId!.Value));
+
+            if (!string.IsNullOrWhiteSpace(search))
+                adminQuery = adminQuery.Where(u =>
+                    u.Name.Contains(search) ||
+                    (u.LastName != null && u.LastName.Contains(search)) ||
+                    (u.Phone != null && u.Phone.Contains(search)));
+
+            var admins = await adminQuery.OrderBy(u => u.Name).ToListAsync();
+
+            foreach (var a in admins)
+            {
+                var primaryRole = a.UserRoles.Select(ur => ur.Role).FirstOrDefault();
+                var roleTag = primaryRole is null ? null : new MemberRoleTagDto(primaryRole.Name, primaryRole.Color);
+                var status = a.PersonStatus is null ? null : new PersonStatusDto(a.PersonStatus.Id, a.PersonStatus.Name, a.PersonStatus.Color);
+                result.Add(new GroupMemberResponse(
+                    a.Id, a.Name, a.LastName, a.Phone, a.Email, a.Notes,
+                    status, a.PrimaryGroupId, a.PrimaryGroup?.Name, a.PrimaryGroup?.Color,
+                    a.CreatedAt, true, a.Id, roleTag));
+            }
+
+            result = result.OrderBy(r => r.Name).ToList();
         }
 
-        var people = await query
-            .OrderBy(p => p.Name)
-            .Select(p => new PersonResponse(p.Id, p.Name, p.LastName, p.Phone, p.Email, p.Notes,
-                p.PersonStatus != null ? new PersonStatusDto(p.PersonStatus.Id, p.PersonStatus.Name, p.PersonStatus.Color) : null,
-                p.PrimaryGroupId, p.PrimaryGroup != null ? p.PrimaryGroup.Name : null,
-                p.PrimaryGroup != null ? p.PrimaryGroup.Color : null, p.CreatedAt))
-            .ToListAsync();
-
-        return Ok(people);
+        return Ok(result);
     }
 
     [HttpGet("{id}")]
