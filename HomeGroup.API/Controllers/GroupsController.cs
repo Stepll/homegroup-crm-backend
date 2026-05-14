@@ -516,7 +516,7 @@ public class GroupsController(AppDbContext db) : ControllerBase
                 .Where(e =>
                     (!e.IsRecurring && e.Date == nextDate) ||
                     (e.IsRecurring && e.RecurringDayOfWeek == (int)nextDate.DayOfWeek))
-                .Where(e => !(e.Type == CalendarEventType.HomeGroup && e.HomeGroupId == id && e.IsRecurring))
+                .Where(e => !(e.Type == CalendarEventType.HomeGroup && e.HomeGroupId == id))
                 .ToListAsync();
 
             nextMeetingEvents = eventsOnDate.Select(e => new CabinetCalendarEvent(
@@ -655,23 +655,40 @@ public class GroupsController(AppDbContext db) : ControllerBase
         if (group is null) return NotFound();
         group.NextMeetingOverrideDate = request.Date;
 
-        // Move plan from old date to new date if both are provided
-        if (!string.IsNullOrEmpty(request.OldDate) && !string.IsNullOrEmpty(request.Date))
+        // Move plan and calendar booking from old date to new date if both are provided
+        if (!string.IsNullOrEmpty(request.OldDate) && !string.IsNullOrEmpty(request.Date)
+            && DateOnly.TryParse(request.OldDate, out var oldDateOnly)
+            && DateOnly.TryParse(request.Date, out var newDateOnly))
         {
+            // Move plan
             var plan = await db.MeetingPlans
                 .FirstOrDefaultAsync(p => p.HomeGroupId == id && p.MeetingDate == request.OldDate);
             if (plan is not null)
             {
-                // Remove any existing plan for the new date to avoid unique conflict
-                var existing = await db.MeetingPlans
+                var existingPlan = await db.MeetingPlans
                     .Include(p => p.Blocks)
                     .FirstOrDefaultAsync(p => p.HomeGroupId == id && p.MeetingDate == request.Date);
-                if (existing is not null)
+                if (existingPlan is not null)
                 {
-                    db.MeetingPlanBlocks.RemoveRange(existing.Blocks);
-                    db.MeetingPlans.Remove(existing);
+                    db.MeetingPlanBlocks.RemoveRange(existingPlan.Blocks);
+                    db.MeetingPlans.Remove(existingPlan);
                 }
                 plan.MeetingDate = request.Date;
+            }
+
+            // Move non-recurring CalendarEvent booking (room reservation)
+            var oldBooking = await db.CalendarEvents
+                .FirstOrDefaultAsync(e => e.Type == CalendarEventType.HomeGroup
+                    && !e.IsRecurring && e.HomeGroupId == id && e.Date == oldDateOnly);
+            if (oldBooking is not null)
+            {
+                var newBooking = await db.CalendarEvents
+                    .FirstOrDefaultAsync(e => e.Type == CalendarEventType.HomeGroup
+                        && !e.IsRecurring && e.HomeGroupId == id && e.Date == newDateOnly);
+                if (newBooking is null)
+                    oldBooking.Date = newDateOnly;
+                else
+                    db.CalendarEvents.Remove(oldBooking);
             }
         }
 
