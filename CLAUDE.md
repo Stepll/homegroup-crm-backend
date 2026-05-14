@@ -20,6 +20,7 @@ HomeGroup.API/
     GroupsController.cs          — /api/v1/groups (CRUD + members + custom fields +
                                     cabinet + events + plans + stats + next-meeting)
     PeopleController.cs          — /api/v1/people (CRUD + custom field values)
+    AdminsController.cs          — /api/v1/admins (CRUD + profile + set-password)
     PersonStatusesController.cs  — /api/v1/person-statuses (CRUD)
     RolesController.cs           — /api/v1/roles (CRUD, system role protection)
     AttendanceController.cs      — /api/v1/attendance (records + meta)
@@ -32,6 +33,9 @@ HomeGroup.API/
     Entities/
       Role.cs                    — Id, Name, Color, PermissionsJson, IsSystem, IsDefault
       User.cs                    — Id, Email, PasswordHash, Name, LastName,
+                                   Phone?, Telegram?, Gender?, MaritalStatus?, Address?,
+                                   DateOfBirth?, IsBaptized, Church?, Ministry?,
+                                   IsBaptizedWithSpirit, PersonStatusId?,
                                    PrimaryGroupId, UserRoles[], UserHomeGroups[]
       Person.cs                  — Id, Name, LastName, Phone, Email, Telegram?,
                                    Notes, Gender?, MaritalStatus?, Address?,
@@ -46,7 +50,10 @@ HomeGroup.API/
       HomeGroupMember.cs         — HomeGroupId, PersonId, Role (join table)
       UserHomeGroup.cs           — UserId, HomeGroupId (join table)
       UserRole.cs                — UserId, RoleId (join table)
-      Attendance.cs              — PersonId, HomeGroupId, MeetingDate, WasPresent, Notes
+      Attendance.cs              — PersonId? (nullable), UserId? (nullable), HomeGroupId,
+                                   MeetingDate, WasPresent, Notes
+                                   — filtered unique indexes: (PersonId, HomeGroupId, MeetingDate)
+                                     WHERE PersonId IS NOT NULL, і аналогічно для UserId
       AttendanceMeta.cs          — Id, HomeGroupId, MeetingDate, GuestCount, GuestInfo?
       HomeGroupCustomField.cs    — Id, HomeGroupId, Name, CreatedAt
       PersonCustomFieldValue.cs  — Id, PersonId, FieldId, Value
@@ -76,8 +83,11 @@ HomeGroup.API/
                                    CustomFieldDto
       PersonStatuses/PersonStatusDtos.cs — PersonStatusDto(Id,Name,Color),
                                    CreatePersonStatusRequest, UpdatePersonStatusRequest
+      Admins/AdminDtos.cs        — AdminResponse (всі поля профілю + roles + groups),
+                                   CreateAdminRequest, UpdateAdminRequest,
+                                   UpdateAdminProfileRequest, SetPasswordRequest
       Roles/RoleDtos.cs
-      Attendance/AttendanceDtos.cs — RecordAttendanceRequest, AttendanceEntry,
+      Attendance/AttendanceDtos.cs — RecordAttendanceRequest, AttendanceEntry (personId? | userId?),
                                      AttendanceResponse, AttendanceSummary,
                                      AttendanceMetaResponse, SaveAttendanceMetaRequest
       Planning/PlanningDtos.cs   — PlanBlockDto, MeetingPlanDto, MeetingPlanSummaryDto,
@@ -127,7 +137,8 @@ POST /api/v1/auth/login
 
 ### People
 ```
-GET    /api/v1/people                          — ?search=&noGroup=true
+GET    /api/v1/people                          — ?search=&noGroup=&includeAdmins=&myOversight=
+                                                 → GroupMemberResponse[] (persons + optional admins)
 GET    /api/v1/people/:id                      → PersonDetailResponse (з customFields)
 POST   /api/v1/people
 PUT    /api/v1/people/:id                      — синхронізує HomeGroupMembers
@@ -136,6 +147,20 @@ DELETE /api/v1/people/:id
 POST   /api/v1/people/:id/custom-fields
 PUT    /api/v1/people/:id/custom-fields/:fieldId
 DELETE /api/v1/people/:id/custom-fields/:fieldId
+```
+
+### Admins
+```
+GET    /api/v1/admins/me                       → AdminResponse (поточний юзер)
+GET    /api/v1/admins                          → AdminResponse[]
+GET    /api/v1/admins/:id                      → AdminResponse
+POST   /api/v1/admins                          — { name, lastName?, email, password, roleIds[], primaryGroupId?, visibleGroupIds[] }
+PUT    /api/v1/admins/:id                      — { name, lastName?, email, roleIds[], primaryGroupId?, visibleGroupIds[] }
+PUT    /api/v1/admins/:id/profile              — { phone?, telegram?, gender?, maritalStatus?, address?,
+                                                   dateOfBirth?, isBaptized, church?, ministry?,
+                                                   isBaptizedWithSpirit, personStatusId? }
+POST   /api/v1/admins/:id/set-password        — { newPassword }
+DELETE /api/v1/admins/:id
 ```
 
 ### Groups
@@ -185,7 +210,8 @@ DELETE /api/v1/roles/:id   — заборонено для IsSystem=true
 ```
 GET  /api/v1/attendance             — ?groupId=&from=&to=
 GET  /api/v1/attendance/summary     — ?groupId=
-POST /api/v1/attendance             — { homeGroupId, meetingDate, entries: [{personId, wasPresent}] }
+POST /api/v1/attendance             — { homeGroupId, meetingDate,
+                                        entries: [{personId?, userId?, wasPresent}] }
 GET  /api/v1/attendance/meta        — ?groupId=&date= → { guestCount, guestInfo }
 POST /api/v1/attendance/meta        — { homeGroupId, meetingDate, guestCount, guestInfo? }
 ```
@@ -224,6 +250,18 @@ DELETE /api/v1/person-statuses/:id
 
 ### People Visibility Filter
 У `PeopleController.GetAll`: якщо користувач має `UserHomeGroups` (не superadmin) — показуються тільки люди з цих груп.
+- `includeAdmins=true` → додає Users (isAdmin=true) з PrimaryGroupId у видимих групах як `GroupMemberResponse`
+- `myOversight=true` → фільтрує лише Person де `OversightUserId == currentUserId` (admins не включаються)
+
+### Admin Profile
+`User` тепер має ті ж особисті поля що і `Person` (Phone, Telegram, Gender, тощо).
+- `PUT /admins/:id/profile` — оновлює особисті поля (не стосується ролей/груп)
+- `GET /admins/me` — поточний авторизований користувач
+- `PUT /admins/:id` — оновлює name, email, roleIds, primaryGroupId, visibleGroupIds
+
+### Groups Members — Admins
+`GET /groups/:id/members` повертає як `Person` так і `User` з `PrimaryGroupId == groupId`.
+Admins в результаті мають `IsAdmin=true` і `UserId` (id юзера), persons мають `IsAdmin=false`.
 
 ### Cabinet org team — roles
 `GetCabinet` включає `UserRoles.ThenInclude(Role)` для orgTeam і повертає першу роль як `CabinetRoleTag(Name, Color)`.
@@ -243,6 +281,10 @@ DELETE /api/v1/person-statuses/:id
 9. `AddPersonStatuses` — PersonStatuses table + Person.PersonStatusId FK (replaces string Status)
 10. `AddPersonExtendedFields` — Person: Telegram, Gender, MaritalStatus, Address,
     IsBaptized, Church, Ministry, IsBaptizedWithSpirit
+11. `AddAdminProfileFields` — User: Phone, Telegram, Gender, MaritalStatus, Address, DateOfBirth,
+    IsBaptized, Church, Ministry, IsBaptizedWithSpirit, PersonStatusId (FK)
+    + Attendance: PersonId → nullable, нове поле UserId (nullable)
+    + filtered unique indexes на Attendance (PersonId WHERE NOT NULL, UserId WHERE NOT NULL)
 
 ## Development Commands
 
@@ -305,12 +347,17 @@ Nginx проксує на контейнер. SSL через Certbot + Let's Enc
 - [x] Person Statuses CRUD (configurable, color + name, FK on Person)
 - [x] Extended Person fields (Telegram, Gender, MaritalStatus, Address,
       IsBaptized, Church, Ministry, IsBaptizedWithSpirit)
+- [x] Admins CRUD (AdminsController: getAll, getById, getMe, create, update, updateProfile,
+      setPassword, delete)
+- [x] Admin profile fields on User entity (same personal fields as Person)
+- [x] Mixed attendance — Attendance.PersonId nullable + UserId nullable, filtered unique indexes
+- [x] GET /people includeAdmins + myOversight params → GroupMemberResponse[]
+- [x] GET /groups/:id/members includes admins with PrimaryGroupId == groupId
 
 ## TODO
 
 - [ ] Опіка (Oversight) — configurable list
 - [ ] Реальний enforcement прав доступу на основі Role.PermissionsJson
-- [ ] Admins CRUD (Users management)
 - [ ] Refresh tokens
 - [ ] Pagination для великих списків
 - [ ] Swagger / OpenAPI
