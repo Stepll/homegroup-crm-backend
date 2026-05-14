@@ -113,6 +113,12 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             .HasForeignKey(g => g.LeaderId)
             .OnDelete(DeleteBehavior.SetNull);
 
+        modelBuilder.Entity<HomeGroupEntity>()
+            .HasOne(g => g.AutoBookRoom)
+            .WithMany()
+            .HasForeignKey(g => g.AutoBookRoomId)
+            .OnDelete(DeleteBehavior.SetNull);
+
         modelBuilder.Entity<Person>()
             .HasOne(p => p.PrimaryGroup)
             .WithMany()

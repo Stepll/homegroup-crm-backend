@@ -8,12 +8,28 @@ public record GroupCabinetResponse(
     List<CabinetUpcomingEvent> UpcomingEvents,
     List<CabinetOrgMember> OrgTeam,
     CabinetStats Stats,
-    bool HasPlanForNextMeeting = false);
+    bool HasPlanForNextMeeting = false,
+    long? NextMeetingRoomId = null,
+    List<CabinetCalendarEvent>? NextMeetingEvents = null,
+    List<CabinetCalendarEvent>? NextMeetingConflicts = null,
+    bool AutoBookEnabled = false);
 
 public record CabinetGroupInfo(
     long Id, string Name, string Color,
     string? MeetingDay, string? MeetingTime, string? Location,
-    string? TelegramGroupId = null);
+    string? TelegramGroupId = null,
+    string? MeetingEndTime = null,
+    long? AutoBookRoomId = null);
+
+public record CabinetCalendarEvent(
+    long EventId,
+    string Title,
+    string Type,
+    string? StartTime,
+    string? EndTime,
+    long? RoomId,
+    string? RoomColor,
+    string? HomeGroupColor);
 
 public record CabinetAttendanceSummary(int Present, int Total);
 

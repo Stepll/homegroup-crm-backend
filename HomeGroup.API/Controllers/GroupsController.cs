@@ -25,7 +25,7 @@ public class GroupsController(AppDbContext db) : ControllerBase
             .Select(g => new GroupResponse(
                 g.Id, g.Name, g.Description, g.Color, g.MeetingDay, g.MeetingTime, g.Location,
                 g.LeaderId, g.Leader != null ? g.Leader.Name : null,
-                g.IsActive, g.Members.Count, g.TelegramGroupId))
+                g.IsActive, g.Members.Count, g.TelegramGroupId, g.MeetingEndTime))
             .ToListAsync();
 
         return Ok(groups);
@@ -95,6 +95,7 @@ public class GroupsController(AppDbContext db) : ControllerBase
             Color = request.Color,
             MeetingDay = request.MeetingDay,
             MeetingTime = request.MeetingTime,
+            MeetingEndTime = request.MeetingEndTime,
             Location = request.Location,
             LeaderId = request.LeaderId,
             TelegramGroupId = request.TelegramGroupId,
@@ -105,7 +106,7 @@ public class GroupsController(AppDbContext db) : ControllerBase
         await SyncGroupCalendarEvent(group, db);
 
         return CreatedAtAction(nameof(GetById), new { id = group.Id },
-            new GroupResponse(group.Id, group.Name, group.Description, group.Color, group.MeetingDay, group.MeetingTime, group.Location, group.LeaderId, null, group.IsActive, 0, group.TelegramGroupId));
+            new GroupResponse(group.Id, group.Name, group.Description, group.Color, group.MeetingDay, group.MeetingTime, group.Location, group.LeaderId, null, group.IsActive, 0, group.TelegramGroupId, group.MeetingEndTime));
     }
 
     [HttpPut("{id}")]
@@ -119,6 +120,7 @@ public class GroupsController(AppDbContext db) : ControllerBase
         group.Color = request.Color;
         group.MeetingDay = request.MeetingDay;
         group.MeetingTime = request.MeetingTime;
+        group.MeetingEndTime = request.MeetingEndTime;
         group.Location = request.Location;
         group.LeaderId = request.LeaderId;
         group.IsActive = request.IsActive;
@@ -126,7 +128,7 @@ public class GroupsController(AppDbContext db) : ControllerBase
 
         await db.SaveChangesAsync();
         await SyncGroupCalendarEvent(group, db);
-        return Ok(new GroupResponse(group.Id, group.Name, group.Description, group.Color, group.MeetingDay, group.MeetingTime, group.Location, group.LeaderId, group.Leader?.Name, group.IsActive, group.Members.Count, group.TelegramGroupId));
+        return Ok(new GroupResponse(group.Id, group.Name, group.Description, group.Color, group.MeetingDay, group.MeetingTime, group.Location, group.LeaderId, group.Leader?.Name, group.IsActive, group.Members.Count, group.TelegramGroupId, group.MeetingEndTime));
     }
 
     [HttpDelete("{id}")]
@@ -462,15 +464,106 @@ public class GroupsController(AppDbContext db) : ControllerBase
         var hasPlan = nextMeetingStr != null && await db.MeetingPlans
             .AnyAsync(p => p.HomeGroupId == id && p.MeetingDate == nextMeetingStr);
 
+        // Calendar data for next meeting
+        long? nextMeetingRoomId = null;
+        List<CabinetCalendarEvent> nextMeetingEvents = [];
+        List<CabinetCalendarEvent> nextMeetingConflicts = [];
+
+        if (nextMeetingStr != null && DateOnly.TryParse(nextMeetingStr, out var nextDate))
+        {
+            // Auto-book: ensure booking CalendarEvent exists for next meeting date
+            if (group.AutoBookRoomId.HasValue)
+            {
+                var autoBooking = await db.CalendarEvents
+                    .FirstOrDefaultAsync(e => e.Type == CalendarEventType.HomeGroup
+                        && !e.IsRecurring && e.HomeGroupId == id && e.Date == nextDate);
+
+                if (autoBooking is null)
+                {
+                    autoBooking = new CalendarEvent
+                    {
+                        Title = group.Name,
+                        Type = CalendarEventType.HomeGroup,
+                        HomeGroupId = id,
+                        IsRecurring = false,
+                        Date = nextDate,
+                        StartTime = TimeOnly.TryParse(group.MeetingTime, out var ast) ? ast : null,
+                        EndTime = TimeOnly.TryParse(group.MeetingEndTime, out var aet) ? aet : null,
+                        RoomId = group.AutoBookRoomId,
+                    };
+                    db.CalendarEvents.Add(autoBooking);
+                    await db.SaveChangesAsync();
+                }
+                else if (autoBooking.RoomId != group.AutoBookRoomId)
+                {
+                    autoBooking.RoomId = group.AutoBookRoomId;
+                    await db.SaveChangesAsync();
+                }
+                nextMeetingRoomId = group.AutoBookRoomId;
+            }
+            else
+            {
+                var manualBooking = await db.CalendarEvents
+                    .FirstOrDefaultAsync(e => e.Type == CalendarEventType.HomeGroup
+                        && !e.IsRecurring && e.HomeGroupId == id && e.Date == nextDate);
+                nextMeetingRoomId = manualBooking?.RoomId;
+            }
+
+            // Load all events on the next meeting date (for mini calendar + conflicts)
+            var eventsOnDate = await db.CalendarEvents
+                .Include(e => e.Room)
+                .Include(e => e.HomeGroup)
+                .Where(e =>
+                    (!e.IsRecurring && e.Date == nextDate) ||
+                    (e.IsRecurring && e.RecurringDayOfWeek == (int)nextDate.DayOfWeek))
+                .Where(e => !(e.Type == CalendarEventType.HomeGroup && e.HomeGroupId == id && e.IsRecurring))
+                .ToListAsync();
+
+            nextMeetingEvents = eventsOnDate.Select(e => new CabinetCalendarEvent(
+                e.Id, e.Title, e.Type.ToString(),
+                e.StartTime?.ToString("HH:mm"), e.EndTime?.ToString("HH:mm"),
+                e.RoomId, e.Room?.Color, e.HomeGroup?.Color
+            )).ToList();
+
+            // Detect conflicts: events overlapping with the group's meeting time
+            if (TimeOnly.TryParse(group.MeetingTime, out var mStart))
+            {
+                var mStartMin = mStart.Hour * 60 + mStart.Minute;
+                var mEndMin = TimeOnly.TryParse(group.MeetingEndTime, out var mEnd)
+                    ? mEnd.Hour * 60 + mEnd.Minute
+                    : mStartMin + 120;
+
+                nextMeetingConflicts = nextMeetingEvents
+                    .Where(e =>
+                    {
+                        if (e.StartTime == null) return false;
+                        var sp = e.StartTime.Split(':');
+                        var eStart = int.Parse(sp[0]) * 60 + int.Parse(sp[1]);
+                        var eEnd = eStart + 120;
+                        if (e.EndTime != null)
+                        {
+                            var ep = e.EndTime.Split(':');
+                            eEnd = int.Parse(ep[0]) * 60 + int.Parse(ep[1]);
+                        }
+                        return eStart < mEndMin && mStartMin < eEnd;
+                    })
+                    .ToList();
+            }
+        }
+
         return Ok(new GroupCabinetResponse(
-            new CabinetGroupInfo(group.Id, group.Name, group.Color, group.MeetingDay, group.MeetingTime, group.Location, group.TelegramGroupId),
+            new CabinetGroupInfo(group.Id, group.Name, group.Color, group.MeetingDay, group.MeetingTime, group.Location, group.TelegramGroupId, group.MeetingEndTime, group.AutoBookRoomId),
             nextMeetingStr,
             lastMeeting?.ToString("yyyy-MM-dd"),
             lastAttendance,
             upcomingEvents,
             orgTeam,
             stats,
-            hasPlan));
+            hasPlan,
+            nextMeetingRoomId,
+            nextMeetingEvents,
+            nextMeetingConflicts,
+            group.AutoBookRoomId.HasValue));
     }
 
     [HttpGet("{id}/stats")]
@@ -701,10 +794,55 @@ public class GroupsController(AppDbContext db) : ControllerBase
         return today.AddDays(-daysAgo == 0 ? -7 : -daysAgo);
     }
 
+    [HttpPut("{id}/book-room")]
+    public async Task<IActionResult> BookRoom(long id, BookRoomRequest request)
+    {
+        var group = await db.HomeGroups.FirstOrDefaultAsync(g => g.Id == id);
+        if (group is null) return NotFound();
+
+        if (!DateOnly.TryParse(request.Date, out var date))
+            return BadRequest("Invalid date");
+
+        group.AutoBookRoomId = request.AutoBook ? request.RoomId : null;
+
+        var booking = await db.CalendarEvents
+            .FirstOrDefaultAsync(e => e.Type == CalendarEventType.HomeGroup
+                && !e.IsRecurring && e.HomeGroupId == id && e.Date == date);
+
+        if (request.RoomId.HasValue)
+        {
+            if (booking is null)
+            {
+                db.CalendarEvents.Add(new CalendarEvent
+                {
+                    Title = group.Name,
+                    Type = CalendarEventType.HomeGroup,
+                    HomeGroupId = id,
+                    IsRecurring = false,
+                    Date = date,
+                    StartTime = TimeOnly.TryParse(group.MeetingTime, out var st) ? st : null,
+                    EndTime = TimeOnly.TryParse(group.MeetingEndTime, out var et) ? et : null,
+                    RoomId = request.RoomId,
+                });
+            }
+            else
+            {
+                booking.RoomId = request.RoomId;
+            }
+        }
+        else if (booking is not null)
+        {
+            db.CalendarEvents.Remove(booking);
+        }
+
+        await db.SaveChangesAsync();
+        return Ok();
+    }
+
     private static async Task SyncGroupCalendarEvent(HomeGroupEntity group, AppDbContext db)
     {
         var existing = await db.CalendarEvents
-            .FirstOrDefaultAsync(e => e.Type == CalendarEventType.HomeGroup && e.HomeGroupId == group.Id);
+            .FirstOrDefaultAsync(e => e.Type == CalendarEventType.HomeGroup && e.HomeGroupId == group.Id && e.IsRecurring);
 
         var hasMeeting = !string.IsNullOrEmpty(group.MeetingDay) &&
                          UkrDays.TryGetValue(group.MeetingDay, out var dow);
@@ -713,6 +851,7 @@ public class GroupsController(AppDbContext db) : ControllerBase
         {
             UkrDays.TryGetValue(group.MeetingDay!, out var dayOfWeek);
             TimeOnly.TryParse(group.MeetingTime, out var startTime);
+            TimeOnly? endTime = TimeOnly.TryParse(group.MeetingEndTime, out var et) ? et : null;
 
             if (existing is null)
             {
@@ -725,6 +864,7 @@ public class GroupsController(AppDbContext db) : ControllerBase
                     IsRecurring = true,
                     RecurringDayOfWeek = (int)dayOfWeek,
                     StartTime = startTime == default ? null : startTime,
+                    EndTime = endTime,
                 });
             }
             else
@@ -733,6 +873,7 @@ public class GroupsController(AppDbContext db) : ControllerBase
                 existing.Location = group.Location;
                 existing.RecurringDayOfWeek = (int)dayOfWeek;
                 existing.StartTime = startTime == default ? null : startTime;
+                existing.EndTime = endTime;
             }
         }
         else if (existing is not null)

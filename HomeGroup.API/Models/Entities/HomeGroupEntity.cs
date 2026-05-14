@@ -8,7 +8,10 @@ public class HomeGroupEntity
     public string Color { get; set; } = "#64748B";
     public string? MeetingDay { get; set; }
     public string? MeetingTime { get; set; }
+    public string? MeetingEndTime { get; set; }
     public string? Location { get; set; }
+    public long? AutoBookRoomId { get; set; }
+    public Room? AutoBookRoom { get; set; }
     public long? LeaderId { get; set; }
     public Person? Leader { get; set; }
     public string? TelegramGroupId { get; set; }
