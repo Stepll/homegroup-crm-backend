@@ -25,5 +25,6 @@ public class CalendarEvent
     public TimeOnly? EndTime { get; set; }
     public DateOnly? Date { get; set; }
     public string? GoogleEventId { get; set; }
+    public bool? IsHomeGroupMeeting { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }

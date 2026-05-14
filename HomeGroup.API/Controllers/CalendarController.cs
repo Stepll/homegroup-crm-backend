@@ -48,6 +48,21 @@ public class CalendarController(AppDbContext db) : ControllerBase
         var events = await query.ToListAsync();
         var result = new List<CalendarOccurrenceDto>();
 
+        // Helper: get Monday of the week for a date (Mon=start of week)
+        static DateOnly GetWeekMonday(DateOnly date) {
+            int dow = (int)date.DayOfWeek; // 0=Sun
+            int daysFromMonday = dow == 0 ? 6 : dow - 1;
+            return date.AddDays(-daysFromMonday);
+        }
+
+        // Pre-compute suppressed (HomeGroupId, WeekMonday) pairs
+        // A suppression = non-recurring HomeGroup event with IsHomeGroupMeeting IS NOT NULL
+        var suppressedWeeks = events
+            .Where(e => !e.IsRecurring && e.Type == CalendarEventType.HomeGroup
+                        && e.HomeGroupId.HasValue && e.Date.HasValue && e.IsHomeGroupMeeting.HasValue)
+            .Select(e => (e.HomeGroupId!.Value, GetWeekMonday(e.Date!.Value)))
+            .ToHashSet();
+
         foreach (var evt in events)
         {
             if (evt.IsRecurring && evt.RecurringDayOfWeek.HasValue)
@@ -55,12 +70,21 @@ public class CalendarController(AppDbContext db) : ControllerBase
                 for (var d = fromDate; d <= toDate; d = d.AddDays(1))
                 {
                     if ((int)d.DayOfWeek == evt.RecurringDayOfWeek.Value)
-                        result.Add(ToOccurrence(evt, d));
+                    {
+                        bool isGhost = evt.Type == CalendarEventType.HomeGroup;
+                        // Suppress ghost if there's a suppression marker for that week
+                        if (isGhost && evt.HomeGroupId.HasValue &&
+                            suppressedWeeks.Contains((evt.HomeGroupId.Value, GetWeekMonday(d))))
+                            continue;
+                        result.Add(ToOccurrence(evt, d, isGhost));
+                    }
                 }
             }
             else if (!evt.IsRecurring && evt.Date.HasValue && evt.Date >= fromDate && evt.Date <= toDate)
             {
-                result.Add(ToOccurrence(evt, evt.Date.Value));
+                // Don't show cancellation markers in calendar (IsHomeGroupMeeting=false)
+                if (evt.IsHomeGroupMeeting == false) continue;
+                result.Add(ToOccurrence(evt, evt.Date.Value, false));
             }
         }
 
@@ -109,6 +133,7 @@ public class CalendarController(AppDbContext db) : ControllerBase
             StartTime = ParseTime(request.StartTime),
             EndTime = ParseTime(request.EndTime),
             Date = !request.IsRecurring && request.Date != null ? DateOnly.Parse(request.Date) : null,
+            IsHomeGroupMeeting = request.IsHomeGroupMeeting,
         };
 
         db.CalendarEvents.Add(evt);
@@ -142,6 +167,7 @@ public class CalendarController(AppDbContext db) : ControllerBase
         evt.StartTime = ParseTime(request.StartTime);
         evt.EndTime = ParseTime(request.EndTime);
         evt.Date = !request.IsRecurring && request.Date != null ? DateOnly.Parse(request.Date) : null;
+        evt.IsHomeGroupMeeting = request.IsHomeGroupMeeting;
 
         await db.SaveChangesAsync();
 
@@ -167,15 +193,17 @@ public class CalendarController(AppDbContext db) : ControllerBase
         e.HomeGroupId, e.HomeGroup?.Name, e.HomeGroup?.Color,
         e.IsRecurring, e.RecurringDayOfWeek,
         e.StartTime?.ToString("HH:mm"), e.EndTime?.ToString("HH:mm"),
-        e.Date?.ToString("yyyy-MM-dd"));
+        e.Date?.ToString("yyyy-MM-dd"),
+        e.IsHomeGroupMeeting);
 
-    private static CalendarOccurrenceDto ToOccurrence(CalendarEvent e, DateOnly date) => new(
+    private static CalendarOccurrenceDto ToOccurrence(CalendarEvent e, DateOnly date, bool isGhost = false) => new(
         e.Id, e.Title, e.Description, e.Location,
         e.RoomId, e.Room is null ? null : new RoomDto(e.Room.Id, e.Room.Name, e.Room.Building, e.Room.Floor, e.Room.Color),
         e.Type.ToString(),
         e.HomeGroupId, e.HomeGroup?.Name, e.HomeGroup?.Color,
         date.ToString("yyyy-MM-dd"),
-        e.StartTime?.ToString("HH:mm"), e.EndTime?.ToString("HH:mm"));
+        e.StartTime?.ToString("HH:mm"), e.EndTime?.ToString("HH:mm"),
+        isGhost);
 
     private static TimeOnly? ParseTime(string? time) =>
         time is not null && TimeOnly.TryParse(time, out var t) ? t : null;

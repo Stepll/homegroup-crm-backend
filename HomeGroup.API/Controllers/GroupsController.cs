@@ -501,6 +501,7 @@ public class GroupsController(AppDbContext db) : ControllerBase
                         StartTime = TimeOnly.TryParse(group.MeetingTime, out var ast) ? ast : null,
                         EndTime = TimeOnly.TryParse(group.MeetingEndTime, out var aet) ? aet : null,
                         RoomId = group.AutoBookRoomId,
+                        IsHomeGroupMeeting = true,
                     };
                     db.CalendarEvents.Add(autoBooking);
                     await db.SaveChangesAsync();
@@ -529,6 +530,19 @@ public class GroupsController(AppDbContext db) : ControllerBase
                     (e.IsRecurring && e.RecurringDayOfWeek == (int)nextDate.DayOfWeek))
                 .Where(e => !(e.Type == CalendarEventType.HomeGroup && e.HomeGroupId == id))
                 .ToListAsync();
+
+            // Determine suppressed recurring events (other groups where a marker exists for nextDate's week)
+            var weekMonday = nextDate.AddDays(-(((int)nextDate.DayOfWeek - 1 + 7) % 7));
+            var weekSunday = weekMonday.AddDays(6);
+            var suppressedGroupIds = (await db.CalendarEvents
+                .Where(e => !e.IsRecurring && e.Type == CalendarEventType.HomeGroup
+                            && e.HomeGroupId.HasValue && e.IsHomeGroupMeeting.HasValue
+                            && e.Date >= weekMonday && e.Date <= weekSunday)
+                .Select(e => e.HomeGroupId!.Value)
+                .ToListAsync()).ToHashSet();
+            eventsOnDate = eventsOnDate
+                .Where(e => !e.IsRecurring || !suppressedGroupIds.Contains(e.HomeGroupId ?? -1))
+                .ToList();
 
             nextMeetingEvents = eventsOnDate.Select(e => new CabinetCalendarEvent(
                 e.Id, e.Title, e.Type.ToString(),
@@ -735,6 +749,28 @@ public class GroupsController(AppDbContext db) : ControllerBase
         var nextAfter = ComputeNextMeeting(group.MeetingDay, group.MeetingTime, currentNext, TimeOnly.MinValue);
         if (nextAfter is null) return BadRequest(new { message = "Не вказано день тижня для домашки" });
 
+        // Create/update cancellation marker to suppress ghost for the cancelled week
+        var cancelDate = currentNext;
+        var existingMarker = await db.CalendarEvents
+            .FirstOrDefaultAsync(e => e.Type == CalendarEventType.HomeGroup && !e.IsRecurring
+                                       && e.HomeGroupId == id && e.Date == cancelDate);
+        if (existingMarker is null)
+        {
+            db.CalendarEvents.Add(new CalendarEvent
+            {
+                Title = group.Name,
+                Type = CalendarEventType.HomeGroup,
+                HomeGroupId = id,
+                IsRecurring = false,
+                Date = cancelDate,
+                IsHomeGroupMeeting = false, // cancellation marker — suppresses ghost, not shown in calendar
+            });
+        }
+        else
+        {
+            existingMarker.IsHomeGroupMeeting = false;
+        }
+
         group.NextMeetingOverrideDate = nextAfter.Value.ToString("yyyy-MM-dd");
         await db.SaveChangesAsync();
         return Ok(new { date = group.NextMeetingOverrideDate });
@@ -878,11 +914,13 @@ public class GroupsController(AppDbContext db) : ControllerBase
                     StartTime = TimeOnly.TryParse(group.MeetingTime, out var st) ? st : null,
                     EndTime = TimeOnly.TryParse(group.MeetingEndTime, out var et) ? et : null,
                     RoomId = request.RoomId,
+                    IsHomeGroupMeeting = true,
                 });
             }
             else
             {
                 booking.RoomId = request.RoomId;
+                booking.IsHomeGroupMeeting = true;
             }
         }
         else if (booking is not null)

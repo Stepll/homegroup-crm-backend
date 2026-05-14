@@ -17,7 +17,8 @@ public record CalendarEventDto(
     int? RecurringDayOfWeek,
     string? StartTime,
     string? EndTime,
-    string? Date);
+    string? Date,
+    bool? IsHomeGroupMeeting);
 
 public record CalendarOccurrenceDto(
     long EventId,
@@ -32,7 +33,8 @@ public record CalendarOccurrenceDto(
     string? HomeGroupColor,
     string Date,
     string? StartTime,
-    string? EndTime);
+    string? EndTime,
+    bool IsGhost = false);
 
 public record CreateCalendarEventRequest(
     string Title,
@@ -45,7 +47,8 @@ public record CreateCalendarEventRequest(
     int? RecurringDayOfWeek,
     string? StartTime,
     string? EndTime,
-    string? Date);
+    string? Date,
+    bool? IsHomeGroupMeeting);
 
 public record UpdateCalendarEventRequest(
     string Title,
@@ -58,6 +61,7 @@ public record UpdateCalendarEventRequest(
     int? RecurringDayOfWeek,
     string? StartTime,
     string? EndTime,
-    string? Date);
+    string? Date,
+    bool? IsHomeGroupMeeting);
 
 public record RoomRequest(string Name, string Building, int Floor, string Color);
