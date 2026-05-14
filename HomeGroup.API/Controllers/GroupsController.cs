@@ -833,6 +833,12 @@ public class GroupsController(AppDbContext db) : ControllerBase
 
         group.AutoBookRoomId = request.AutoBook ? request.RoomId : null;
 
+        // Sync recurring event's RoomId so other groups can detect conflicts
+        var recurringEvent = await db.CalendarEvents
+            .FirstOrDefaultAsync(e => e.Type == CalendarEventType.HomeGroup && e.IsRecurring && e.HomeGroupId == id);
+        if (recurringEvent != null)
+            recurringEvent.RoomId = request.AutoBook ? request.RoomId : null;
+
         var booking = await db.CalendarEvents
             .FirstOrDefaultAsync(e => e.Type == CalendarEventType.HomeGroup
                 && !e.IsRecurring && e.HomeGroupId == id && e.Date == date);
