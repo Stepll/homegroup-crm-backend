@@ -25,6 +25,7 @@ HomeGroup.API/
     RolesController.cs           — /api/v1/roles (CRUD, system role protection)
     AttendanceController.cs      — /api/v1/attendance (records + meta)
     CalendarController.cs        — /api/v1/calendar (occurrences GET + events CRUD)
+    GoogleCalendarController.cs  — /api/v1/google-calendar/sync (manual Google sync)
     RoomsController.cs           — /api/v1/rooms (CRUD)
     PlanTemplatesController.cs   — /api/v1/plan-templates (global meeting templates)
   Data/
@@ -61,9 +62,9 @@ HomeGroup.API/
       GroupEvent.cs              — Id, HomeGroupId, Name, Month, Day, Year?, CreatedAt
       Room.cs                    — Id, Name
       CalendarEvent.cs           — Id, Title, Description?, Location?, RoomId?,
-                                   Type (Recurring|Global|HomeGroup), HomeGroupId?,
+                                   Type (Recurring|Global|HomeGroup|Google), HomeGroupId?,
                                    IsRecurring, RecurringDayOfWeek? (int, 0=Sun..6=Sat),
-                                   StartTime?, EndTime?, Date?, CreatedAt
+                                   StartTime?, EndTime?, Date?, GoogleEventId?, CreatedAt
       PlanTemplate.cs            — Id, Name, Blocks[], CreatedAt
       PlanTemplateBlock.cs       — Id, TemplateId, Order, Time, Title, Info?, Responsible?
       HomeMeetingPlan.cs         — Id, HomeGroupId, MeetingDate, AppliedTemplateName?, Blocks[], UpdatedAt
@@ -233,6 +234,13 @@ PUT    /api/v1/calendar/events/:id
 DELETE /api/v1/calendar/events/:id
 ```
 
+### Google Calendar
+```
+POST   /api/v1/google-calendar/sync — fetches events from Google Calendar, upserts as Type=Google
+                                      preserves existing RoomId, deletes removed events
+                                      env: Google:CalendarId, Google:ServiceAccountJson
+```
+
 ### Rooms
 ```
 GET    /api/v1/rooms
@@ -305,6 +313,8 @@ Admins в результаті мають `IsAdmin=true` і `UserId` (id юзе�
     + filtered unique indexes на Attendance (PersonId WHERE NOT NULL, UserId WHERE NOT NULL)
 12. `AddCalendarAndRooms` — Drop ChurchEvents, create Rooms table, create CalendarEvents table
     (Type: Recurring|Global|HomeGroup, IsRecurring, RecurringDayOfWeek, StartTime, EndTime, Date)
+13. `AddRoomFields` — Room: Building (default "Church"), Floor (default 1), Color (default "#6B7280")
+14. `AddGoogleCalendarSync` — CalendarEvent: GoogleEventId (nullable string)
 
 ## Development Commands
 
@@ -332,6 +342,8 @@ JWT_AUDIENCE=homegroup-crm-client
 SUPERADMIN_EMAIL=admin@example.com
 SUPERADMIN_PASSWORD=<пароль>
 FRONTEND_URL=https://your-frontend.vercel.app    # без trailing slash!
+GOOGLE_CALENDAR_ID=your-calendar-id@group.calendar.google.com
+GOOGLE_SERVICE_ACCOUNT_JSON={"type":"service_account",...}  # inline JSON або mount файлу
 ASPNETCORE_ENVIRONMENT=Development
 ```
 
@@ -373,9 +385,11 @@ Nginx проксує на контейнер. SSL через Certbot + Let's Enc
 - [x] Mixed attendance — Attendance.PersonId nullable + UserId nullable, filtered unique indexes
 - [x] GET /people includeAdmins + myOversight params → GroupMemberResponse[]
 - [x] GET /groups/:id/members includes admins with PrimaryGroupId == groupId
-- [x] Calendar — unified CalendarEvent (Recurring/Global/HomeGroup types, recurring expansion in GET)
-- [x] Rooms CRUD (stub table: Id, Name — booking logic later)
+- [x] Calendar — unified CalendarEvent (Recurring/Global/HomeGroup/Google types, recurring expansion in GET)
+- [x] Rooms CRUD (Id, Name, Building, Floor, Color — conflict detection in frontend)
 - [x] Auto-sync CalendarEvent (Type=HomeGroup) on HomeGroup create/update from MeetingDay/MeetingTime
+- [x] Google Calendar sync — POST /api/v1/google-calendar/sync via Service Account JSON
+      CalendarEventType.Google=3, GoogleEventId tracks source, RoomId preserved on re-sync
 
 ## TODO
 

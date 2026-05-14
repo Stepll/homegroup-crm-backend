@@ -4,7 +4,8 @@ public enum CalendarEventType
 {
     Recurring = 0,
     Global = 1,
-    HomeGroup = 2
+    HomeGroup = 2,
+    Google = 3,
 }
 
 public class CalendarEvent
@@ -23,5 +24,6 @@ public class CalendarEvent
     public TimeOnly? StartTime { get; set; }
     public TimeOnly? EndTime { get; set; }
     public DateOnly? Date { get; set; }
+    public string? GoogleEventId { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }
