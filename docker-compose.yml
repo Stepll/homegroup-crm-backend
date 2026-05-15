@@ -34,5 +34,19 @@ services:
       retries: 5
     restart: unless-stopped
 
+  bot:
+    build:
+      context: ../homegroup-crm-telegrambot
+      dockerfile: Dockerfile
+    environment:
+      - BOT_TOKEN=${BOT_TOKEN}
+      - API_BASE_URL=http://api:8080
+      - API_EMAIL=${SUPERADMIN_EMAIL}
+      - API_PASSWORD=${SUPERADMIN_PASSWORD}
+    depends_on:
+      api:
+        condition: service_started
+    restart: unless-stopped
+
 volumes:
   postgres_data:
