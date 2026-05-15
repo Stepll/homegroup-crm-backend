@@ -375,8 +375,13 @@ public class GroupsController(AppDbContext db) : ControllerBase
         var nowTime = TimeOnly.FromDateTime(DateTime.UtcNow);
 
         var nextMeeting = ComputeNextMeeting(group.MeetingDay, group.MeetingTime, today, nowTime);
-        var lastMeeting = ComputeLastMeeting(group.MeetingDay, group.MeetingTime, today, nowTime);
 
+        // Last meeting = most recent date with actual attendance records
+        var lastMeeting = await db.Attendances
+            .Where(a => a.HomeGroupId == id)
+            .Select(a => (DateOnly?)a.MeetingDate)
+            .OrderByDescending(d => d)
+            .FirstOrDefaultAsync();
 
         // Last attendance summary
         CabinetAttendanceSummary? lastAttendance = null;
@@ -387,12 +392,6 @@ public class GroupsController(AppDbContext db) : ControllerBase
                 .ToListAsync();
             if (records.Count > 0)
                 lastAttendance = new CabinetAttendanceSummary(records.Count(r => r.WasPresent), records.Count);
-            else
-            {
-                // No attendance records yet — just show member count as total
-                var memberCount = await db.HomeGroupMembers.CountAsync(m => m.HomeGroupId == id);
-                if (memberCount > 0) lastAttendance = new CabinetAttendanceSummary(0, memberCount);
-            }
         }
 
         // Upcoming birthdays (next 30 days)
