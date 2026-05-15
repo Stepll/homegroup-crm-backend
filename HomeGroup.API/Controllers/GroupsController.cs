@@ -433,7 +433,6 @@ public class GroupsController(AppDbContext db) : ControllerBase
             .Select(e => (e, days: ComputeDaysUntil(e.Month, e.Day, e.Year, today)))
             .Where(x => x.days >= 0)
             .OrderBy(x => x.days)
-            .Take(5)
             .Select(x => new GroupEventDto(x.e.Id, x.e.Name, x.e.Month, x.e.Day, x.e.Year, x.days))
             .ToList();
 
