@@ -561,6 +561,8 @@ public class GroupsController(AppDbContext db) : ControllerBase
                 nextMeetingConflicts = nextMeetingEvents
                     .Where(e =>
                     {
+                        // Only warn for non-HomeGroup events (Recurring, Global, Google)
+                        if (e.Type == "HomeGroup") return false;
                         if (e.StartTime == null) return false;
                         var sp = e.StartTime.Split(':');
                         var eStart = int.Parse(sp[0]) * 60 + int.Parse(sp[1]);
