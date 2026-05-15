@@ -25,6 +25,7 @@ public class User
     public bool IsBaptizedWithSpirit { get; set; }
     public long? PersonStatusId { get; set; }
     public PersonStatus? PersonStatus { get; set; }
+    public string? DashboardConfigJson { get; set; }
 
     public ICollection<UserRole> UserRoles { get; set; } = [];
     public ICollection<UserHomeGroup> UserHomeGroups { get; set; } = [];

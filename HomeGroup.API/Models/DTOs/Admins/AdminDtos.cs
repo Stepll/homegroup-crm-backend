@@ -63,3 +63,7 @@ public record UpdateAdminProfileRequest(
     long? PersonStatusId);
 
 public record SetPasswordRequest(string NewPassword);
+
+public record WidgetConfigItem(string Id, bool Enabled);
+
+public record SaveDashboardConfigRequest(List<WidgetConfigItem> Config);

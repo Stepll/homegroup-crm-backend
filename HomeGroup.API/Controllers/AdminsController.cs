@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using System.Text.Json;
 using HomeGroup.API.Data;
 using HomeGroup.API.Models.DTOs.Admins;
 using HomeGroup.API.Models.DTOs.PersonStatuses;
@@ -129,6 +130,39 @@ public class AdminsController(AppDbContext db) : ControllerBase
         if (admin is null) return NotFound();
 
         admin.PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.NewPassword);
+        await db.SaveChangesAsync();
+        return NoContent();
+    }
+
+    [HttpGet("me/dashboard")]
+    public async Task<ActionResult<List<WidgetConfigItem>>> GetDashboardConfig()
+    {
+        var idClaim = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (!long.TryParse(idClaim, out var userId)) return Unauthorized();
+
+        var user = await db.Users.FindAsync(userId);
+        if (user is null) return NotFound();
+
+        if (string.IsNullOrEmpty(user.DashboardConfigJson))
+            return Ok(new List<WidgetConfigItem>());
+
+        var config = JsonSerializer.Deserialize<List<WidgetConfigItem>>(
+            user.DashboardConfigJson,
+            new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+
+        return Ok(config ?? new List<WidgetConfigItem>());
+    }
+
+    [HttpPut("me/dashboard")]
+    public async Task<IActionResult> SaveDashboardConfig(SaveDashboardConfigRequest request)
+    {
+        var idClaim = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (!long.TryParse(idClaim, out var userId)) return Unauthorized();
+
+        var user = await db.Users.FindAsync(userId);
+        if (user is null) return NotFound();
+
+        user.DashboardConfigJson = JsonSerializer.Serialize(request.Config);
         await db.SaveChangesAsync();
         return NoContent();
     }
