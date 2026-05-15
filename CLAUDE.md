@@ -426,6 +426,10 @@ Nginx проксує на контейнер. SSL через Certbot + Let's Enc
 - [x] lastMeetingDate — з реальних Attendances записів, не з ComputeLastMeeting по розкладу
 - [x] Dashboard config per user — User.DashboardConfigJson + GET/PUT /admins/me/dashboard
 - [x] GET /groups/stats/all — агрегована статистика по всіх групах для дашборду
+- [x] POST /groups/:id/plans/date/:date/send-to-telegram — надсилає план в Telegram групу через Bot API
+      Формат: plain text, блоки без часу → футер, відповідальний резолвиться до @telegram через People/Users lookup
+      Потребує BOT_TOKEN env var в api сервісі
+- [x] GET /groups/:id/events — повертає всі події без ліміту (прибрано Take(5))
 
 ## TODO
 
@@ -436,4 +440,3 @@ Nginx проксує на контейнер. SSL через Certbot + Let's Enc
 - [ ] Swagger / OpenAPI
 - [ ] Логування (Serilog)
 - [ ] Health check `/health`
-- [ ] Telegram notify endpoint (повідомити про план в групу)
