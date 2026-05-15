@@ -1,3 +1,4 @@
+using HomeGroup.API.Authorization;
 using HomeGroup.API.Data;
 using HomeGroup.API.Models.DTOs.Calendar;
 using HomeGroup.API.Models.Entities;
@@ -29,6 +30,7 @@ public class RoomsController(AppDbContext db) : ControllerBase
     }
 
     [HttpPost]
+    [RequirePermission("settings.rooms")]
     public async Task<ActionResult<RoomDto>> Create(RoomRequest request)
     {
         var room = new Room
@@ -44,6 +46,7 @@ public class RoomsController(AppDbContext db) : ControllerBase
     }
 
     [HttpPut("{id}")]
+    [RequirePermission("settings.rooms")]
     public async Task<ActionResult<RoomDto>> Update(long id, RoomRequest request)
     {
         var room = await db.Rooms.FindAsync(id);
@@ -57,6 +60,7 @@ public class RoomsController(AppDbContext db) : ControllerBase
     }
 
     [HttpDelete("{id}")]
+    [RequirePermission("settings.rooms")]
     public async Task<IActionResult> Delete(long id)
     {
         var room = await db.Rooms.FindAsync(id);

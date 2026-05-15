@@ -1,3 +1,4 @@
+using HomeGroup.API.Authorization;
 using HomeGroup.API.Data;
 using HomeGroup.API.Models.DTOs.Attendance;
 using Entities = HomeGroup.API.Models.Entities;
@@ -14,6 +15,7 @@ namespace HomeGroup.API.Controllers;
 public class AttendanceController(AppDbContext db) : ControllerBase
 {
     [HttpGet]
+    [RequirePermission("attendance.view")]
     public async Task<ActionResult<List<AttendanceResponse>>> GetByGroup(
         [FromQuery] long groupId,
         [FromQuery] DateOnly? from,
@@ -38,6 +40,7 @@ public class AttendanceController(AppDbContext db) : ControllerBase
     }
 
     [HttpGet("summary")]
+    [RequirePermission("attendance.view")]
     public async Task<ActionResult<List<AttendanceSummary>>> GetSummary([FromQuery] long groupId)
     {
         var summary = await db.Attendances
@@ -56,6 +59,7 @@ public class AttendanceController(AppDbContext db) : ControllerBase
     }
 
     [HttpPost]
+    [RequirePermission("attendance.record")]
     public async Task<IActionResult> Record(RecordAttendanceRequest request)
     {
         if (!await db.HomeGroups.AnyAsync(g => g.Id == request.HomeGroupId))
@@ -95,6 +99,7 @@ public class AttendanceController(AppDbContext db) : ControllerBase
     }
 
     [HttpGet("meta")]
+    [RequirePermission("attendance.view")]
     public async Task<ActionResult<AttendanceMetaResponse>> GetMeta(
         [FromQuery] long groupId, [FromQuery] DateOnly date)
     {
@@ -104,6 +109,7 @@ public class AttendanceController(AppDbContext db) : ControllerBase
     }
 
     [HttpPost("meta")]
+    [RequirePermission("attendance.record")]
     public async Task<IActionResult> SaveMeta(SaveAttendanceMetaRequest request)
     {
         var meta = await db.AttendanceMetas

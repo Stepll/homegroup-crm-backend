@@ -1,3 +1,4 @@
+using HomeGroup.API.Authorization;
 using HomeGroup.API.Data;
 using HomeGroup.API.Models.DTOs.Groups;
 using HomeGroup.API.Models.DTOs.People;
@@ -86,6 +87,7 @@ public class GroupsController(AppDbContext db) : ControllerBase
     }
 
     [HttpPost]
+    [RequirePermission("groups.create")]
     public async Task<ActionResult<GroupResponse>> Create(CreateGroupRequest request)
     {
         var group = new HomeGroupEntity
@@ -110,6 +112,7 @@ public class GroupsController(AppDbContext db) : ControllerBase
     }
 
     [HttpPut("{id}")]
+    [RequirePermission("groups.edit")]
     public async Task<ActionResult<GroupResponse>> Update(long id, UpdateGroupRequest request)
     {
         var group = await db.HomeGroups.Include(g => g.Leader).Include(g => g.Members).FirstOrDefaultAsync(g => g.Id == id);
@@ -132,6 +135,7 @@ public class GroupsController(AppDbContext db) : ControllerBase
     }
 
     [HttpDelete("{id}")]
+    [RequirePermission("groups.delete")]
     public async Task<IActionResult> Delete(long id)
     {
         var group = await db.HomeGroups.FirstOrDefaultAsync(g => g.Id == id);
@@ -143,6 +147,7 @@ public class GroupsController(AppDbContext db) : ControllerBase
     }
 
     [HttpPost("{id}/members")]
+    [RequirePermission("groups.members.manage")]
     public async Task<IActionResult> AddMember(long id, AddMemberRequest request)
     {
         if (!await db.HomeGroups.AnyAsync(g => g.Id == id)) return NotFound();
@@ -157,6 +162,7 @@ public class GroupsController(AppDbContext db) : ControllerBase
     }
 
     [HttpPut("{id}/members/sync")]
+    [RequirePermission("groups.members.manage")]
     public async Task<IActionResult> SyncMembers(long id, SyncMembersRequest request)
     {
         if (!await db.HomeGroups.AnyAsync(g => g.Id == id)) return NotFound();
@@ -198,6 +204,7 @@ public class GroupsController(AppDbContext db) : ControllerBase
     }
 
     [HttpDelete("{id}/members/{personId}")]
+    [RequirePermission("groups.members.manage")]
     public async Task<IActionResult> RemoveMember(long id, long personId)
     {
         var member = await db.HomeGroupMembers.FirstOrDefaultAsync(m => m.HomeGroupId == id && m.PersonId == personId);
@@ -225,6 +232,7 @@ public class GroupsController(AppDbContext db) : ControllerBase
     }
 
     [HttpPost("{id}/custom-fields")]
+    [RequirePermission("settings.groups")]
     public async Task<ActionResult<GroupCustomFieldDto>> AddCustomField(long id, CreateGroupCustomFieldRequest request)
     {
         if (!await db.HomeGroups.AnyAsync(g => g.Id == id)) return NotFound();
@@ -237,6 +245,7 @@ public class GroupsController(AppDbContext db) : ControllerBase
     }
 
     [HttpDelete("{id}/custom-fields/{fieldId}")]
+    [RequirePermission("settings.groups")]
     public async Task<IActionResult> DeleteCustomField(long id, long fieldId)
     {
         var field = await db.HomeGroupCustomFields.FirstOrDefaultAsync(f => f.Id == fieldId && f.HomeGroupId == id);
@@ -250,6 +259,7 @@ public class GroupsController(AppDbContext db) : ControllerBase
     // ── Plans ─────────────────────────────────────────────────────────────────
 
     [HttpGet("{id}/plans")]
+    [RequirePermission("planning.view")]
     public async Task<ActionResult<List<MeetingPlanSummaryDto>>> GetPlans(long id)
     {
         var plans = await db.MeetingPlans
@@ -262,6 +272,7 @@ public class GroupsController(AppDbContext db) : ControllerBase
     }
 
     [HttpGet("{id}/plans/date/{date}")]
+    [RequirePermission("planning.view")]
     public async Task<ActionResult<MeetingPlanDto>> GetPlanByDate(long id, string date)
     {
         var plan = await db.MeetingPlans
@@ -273,6 +284,7 @@ public class GroupsController(AppDbContext db) : ControllerBase
     }
 
     [HttpPost("{id}/plans")]
+    [RequirePermission("planning.edit")]
     public async Task<ActionResult<MeetingPlanDto>> SavePlan(long id, SavePlanRequest request)
     {
         if (!await db.HomeGroups.AnyAsync(g => g.Id == id)) return NotFound();
@@ -316,6 +328,7 @@ public class GroupsController(AppDbContext db) : ControllerBase
         p.UpdatedAt);
 
     [HttpPost("{id}/plans/date/{date}/send-to-telegram")]
+    [RequirePermission("planning.sendToTelegram")]
     public async Task<IActionResult> SendPlanToTelegram(
         long id, string date,
         [FromServices] IHttpClientFactory httpClientFactory,
@@ -440,6 +453,7 @@ public class GroupsController(AppDbContext db) : ControllerBase
     }
 
     [HttpPost("{id}/events")]
+    [RequirePermission("groups.events.manage")]
     public async Task<ActionResult<GroupEventDto>> AddEvent(long id, CreateGroupEventRequest request)
     {
         if (!await db.HomeGroups.AnyAsync(g => g.Id == id)) return NotFound();
@@ -460,6 +474,7 @@ public class GroupsController(AppDbContext db) : ControllerBase
     }
 
     [HttpDelete("{id}/events/{eventId}")]
+    [RequirePermission("groups.events.manage")]
     public async Task<IActionResult> DeleteEvent(long id, long eventId)
     {
         var evt = await db.GroupEvents.FirstOrDefaultAsync(e => e.Id == eventId && e.HomeGroupId == id);
@@ -470,6 +485,7 @@ public class GroupsController(AppDbContext db) : ControllerBase
     }
 
     [HttpGet("{id}/cabinet")]
+    [RequirePermission("page.cabinet")]
     public async Task<ActionResult<GroupCabinetResponse>> GetCabinet(long id)
     {
         var group = await db.HomeGroups.FirstOrDefaultAsync(g => g.Id == id);
@@ -697,6 +713,7 @@ public class GroupsController(AppDbContext db) : ControllerBase
     }
 
     [HttpGet("stats/all")]
+    [RequirePermission("attendance.stats")]
     public async Task<ActionResult<GroupStatsResponse>> GetAllStats([FromQuery] string period = "3m")
     {
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
@@ -768,6 +785,7 @@ public class GroupsController(AppDbContext db) : ControllerBase
     }
 
     [HttpGet("{id}/stats")]
+    [RequirePermission("attendance.stats")]
     public async Task<ActionResult<GroupStatsResponse>> GetStats(long id, [FromQuery] string period = "3m")
     {
         if (!await db.HomeGroups.AnyAsync(g => g.Id == id)) return NotFound();
@@ -850,6 +868,7 @@ public class GroupsController(AppDbContext db) : ControllerBase
     }
 
     [HttpPut("{id}/next-meeting")]
+    [RequirePermission("groups.nextMeeting.manage")]
     public async Task<IActionResult> SetNextMeeting(long id, SetNextMeetingRequest request)
     {
         var group = await db.HomeGroups.FirstOrDefaultAsync(g => g.Id == id);
@@ -898,6 +917,7 @@ public class GroupsController(AppDbContext db) : ControllerBase
     }
 
     [HttpPut("{id}/skip-meeting")]
+    [RequirePermission("groups.nextMeeting.manage")]
     public async Task<ActionResult<object>> SkipMeeting(long id)
     {
         var group = await db.HomeGroups.FirstOrDefaultAsync(g => g.Id == id);
@@ -953,6 +973,7 @@ public class GroupsController(AppDbContext db) : ControllerBase
     }
 
     [HttpDelete("{id}/plans/date/{date}")]
+    [RequirePermission("planning.edit")]
     public async Task<IActionResult> DeletePlanByDate(long id, string date)
     {
         var plan = await db.MeetingPlans

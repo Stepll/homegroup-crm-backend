@@ -23,6 +23,7 @@ public class AuthController(AppDbContext db, JwtService jwt) : ControllerBase
 
         var roles = user.UserRoles.OrderBy(ur => ur.Role.Name).Select(ur => ur.Role.Name).ToList();
         var primaryRole = roles.FirstOrDefault() ?? string.Empty;
+        var permissions = JwtService.GetMergedPermissions(user);
 
         return Ok(new AuthResponse(
             jwt.GenerateToken(user),
@@ -30,6 +31,7 @@ public class AuthController(AppDbContext db, JwtService jwt) : ControllerBase
             user.Email,
             primaryRole,
             roles,
-            user.PrimaryGroupId));
+            user.PrimaryGroupId,
+            permissions));
     }
 }

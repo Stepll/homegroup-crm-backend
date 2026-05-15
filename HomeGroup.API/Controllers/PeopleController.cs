@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using HomeGroup.API.Authorization;
 using HomeGroup.API.Data;
 using HomeGroup.API.Models.DTOs.Groups;
 using HomeGroup.API.Models.DTOs.People;
@@ -16,6 +17,7 @@ namespace HomeGroup.API.Controllers;
 public class PeopleController(AppDbContext db) : ControllerBase
 {
     [HttpGet]
+    [RequirePermission("people.view")]
     public async Task<ActionResult<List<GroupMemberResponse>>> GetAll(
         [FromQuery] string? search,
         [FromQuery] bool noGroup = false,
@@ -99,6 +101,7 @@ public class PeopleController(AppDbContext db) : ControllerBase
     }
 
     [HttpGet("{id}")]
+    [RequirePermission("people.view")]
     public async Task<ActionResult<PersonDetailResponse>> GetById(long id)
     {
         var person = await db.People
@@ -123,6 +126,7 @@ public class PeopleController(AppDbContext db) : ControllerBase
     }
 
     [HttpPost]
+    [RequirePermission("people.create")]
     public async Task<ActionResult<PersonDetailResponse>> Create(CreatePersonRequest request)
     {
         if (string.IsNullOrWhiteSpace(request.Name))
@@ -149,6 +153,7 @@ public class PeopleController(AppDbContext db) : ControllerBase
     }
 
     [HttpPut("{id}")]
+    [RequirePermission("people.edit")]
     public async Task<ActionResult<PersonDetailResponse>> Update(long id, UpdatePersonRequest request)
     {
         var person = await db.People
@@ -215,6 +220,7 @@ public class PeopleController(AppDbContext db) : ControllerBase
     }
 
     [HttpDelete("{id}")]
+    [RequirePermission("people.delete")]
     public async Task<IActionResult> Delete(long id)
     {
         var person = await db.People.FindAsync(id);
@@ -228,6 +234,7 @@ public class PeopleController(AppDbContext db) : ControllerBase
     // Custom fields — definitions live on the HomeGroup, values are per-person
 
     [HttpPost("{id}/custom-fields")]
+    [RequirePermission("people.customFields")]
     public async Task<ActionResult<CustomFieldDto>> AddCustomField(long id, CreateCustomFieldRequest request)
     {
         var person = await db.People.FindAsync(id);
@@ -247,6 +254,7 @@ public class PeopleController(AppDbContext db) : ControllerBase
     }
 
     [HttpPut("{id}/custom-fields/{fieldId}")]
+    [RequirePermission("people.customFields")]
     public async Task<ActionResult<CustomFieldDto>> UpdateCustomField(long id, long fieldId, UpdateCustomFieldRequest request)
     {
         if (!await db.People.AnyAsync(p => p.Id == id)) return NotFound();
@@ -269,6 +277,7 @@ public class PeopleController(AppDbContext db) : ControllerBase
     }
 
     [HttpDelete("{id}/custom-fields/{fieldId}")]
+    [RequirePermission("people.customFields")]
     public async Task<IActionResult> DeleteCustomField(long id, long fieldId)
     {
         if (!await db.People.AnyAsync(p => p.Id == id)) return NotFound();

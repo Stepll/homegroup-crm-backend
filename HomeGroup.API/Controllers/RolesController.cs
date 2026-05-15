@@ -1,3 +1,4 @@
+using HomeGroup.API.Authorization;
 using HomeGroup.API.Data;
 using HomeGroup.API.Models.DTOs.Roles;
 using HomeGroup.API.Models.Entities;
@@ -40,6 +41,7 @@ public class RolesController(AppDbContext db) : ControllerBase
     }
 
     [HttpPost]
+    [RequirePermission("settings.roles")]
     public async Task<ActionResult<RoleResponse>> Create(CreateRoleRequest request)
     {
         if (await db.Roles.AnyAsync(r => r.Name == request.Name))
@@ -66,6 +68,7 @@ public class RolesController(AppDbContext db) : ControllerBase
     }
 
     [HttpPut("{id}")]
+    [RequirePermission("settings.roles")]
     public async Task<ActionResult<RoleResponse>> Update(long id, UpdateRoleRequest request)
     {
         var role = await db.Roles.Include(r => r.UserRoles).FirstOrDefaultAsync(r => r.Id == id);
@@ -92,6 +95,7 @@ public class RolesController(AppDbContext db) : ControllerBase
     }
 
     [HttpDelete("{id}")]
+    [RequirePermission("settings.roles")]
     public async Task<IActionResult> Delete(long id)
     {
         var role = await db.Roles.FirstOrDefaultAsync(r => r.Id == id);

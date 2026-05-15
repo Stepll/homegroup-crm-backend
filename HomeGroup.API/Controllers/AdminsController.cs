@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using System.Text.Json;
+using HomeGroup.API.Authorization;
 using HomeGroup.API.Data;
 using HomeGroup.API.Models.DTOs.Admins;
 using HomeGroup.API.Models.DTOs.PersonStatuses;
@@ -27,6 +28,7 @@ public class AdminsController(AppDbContext db) : ControllerBase
     }
 
     [HttpGet]
+    [RequirePermission("settings.admins")]
     public async Task<ActionResult<List<AdminResponse>>> GetAll()
     {
         var admins = await db.Users
@@ -53,6 +55,7 @@ public class AdminsController(AppDbContext db) : ControllerBase
     }
 
     [HttpPost]
+    [RequirePermission("settings.admins")]
     public async Task<ActionResult<AdminResponse>> Create(CreateAdminRequest request)
     {
         if (await db.Users.AnyAsync(u => u.Email == request.Email))
@@ -78,6 +81,7 @@ public class AdminsController(AppDbContext db) : ControllerBase
     }
 
     [HttpPut("{id:long}")]
+    [RequirePermission("settings.admins")]
     public async Task<ActionResult<AdminResponse>> Update(long id, UpdateAdminRequest request)
     {
         var admin = await db.Users.FindAsync(id);
@@ -124,6 +128,7 @@ public class AdminsController(AppDbContext db) : ControllerBase
     }
 
     [HttpPost("{id:long}/set-password")]
+    [RequirePermission("settings.admins")]
     public async Task<IActionResult> SetPassword(long id, SetPasswordRequest request)
     {
         var admin = await db.Users.FindAsync(id);
@@ -168,6 +173,7 @@ public class AdminsController(AppDbContext db) : ControllerBase
     }
 
     [HttpDelete("{id:long}")]
+    [RequirePermission("settings.admins")]
     public async Task<IActionResult> Delete(long id)
     {
         var admin = await db.Users.FindAsync(id);

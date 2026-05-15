@@ -1,3 +1,4 @@
+using HomeGroup.API.Authorization;
 using HomeGroup.API.Data;
 using HomeGroup.API.Models.DTOs.Calendar;
 using HomeGroup.API.Models.Entities;
@@ -13,6 +14,7 @@ namespace HomeGroup.API.Controllers;
 public class CalendarController(AppDbContext db) : ControllerBase
 {
     [HttpGet]
+    [RequirePermission("calendar.view")]
     public async Task<ActionResult<List<CalendarOccurrenceDto>>> GetOccurrences(
         [FromQuery] string from,
         [FromQuery] string to,
@@ -105,6 +107,7 @@ public class CalendarController(AppDbContext db) : ControllerBase
     }
 
     [HttpGet("events")]
+    [RequirePermission("calendar.view")]
     public async Task<ActionResult<List<CalendarEventDto>>> GetEvents()
     {
         var events = await db.CalendarEvents
@@ -117,6 +120,7 @@ public class CalendarController(AppDbContext db) : ControllerBase
     }
 
     [HttpGet("events/{id}")]
+    [RequirePermission("calendar.view")]
     public async Task<ActionResult<CalendarEventDto>> GetEvent(long id)
     {
         var evt = await db.CalendarEvents
@@ -128,6 +132,7 @@ public class CalendarController(AppDbContext db) : ControllerBase
     }
 
     [HttpPost("events")]
+    [RequirePermission("calendar.events.manage")]
     public async Task<ActionResult<CalendarEventDto>> Create(CreateCalendarEventRequest request)
     {
         if (!Enum.TryParse<CalendarEventType>(request.Type, true, out var type))
@@ -158,6 +163,7 @@ public class CalendarController(AppDbContext db) : ControllerBase
     }
 
     [HttpPut("events/{id}")]
+    [RequirePermission("calendar.events.manage")]
     public async Task<ActionResult<CalendarEventDto>> Update(long id, UpdateCalendarEventRequest request)
     {
         var evt = await db.CalendarEvents
@@ -190,6 +196,7 @@ public class CalendarController(AppDbContext db) : ControllerBase
     }
 
     [HttpDelete("events/{id}")]
+    [RequirePermission("calendar.events.manage")]
     public async Task<IActionResult> Delete(long id)
     {
         var evt = await db.CalendarEvents.FindAsync(id);

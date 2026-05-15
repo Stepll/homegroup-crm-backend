@@ -1,3 +1,4 @@
+using HomeGroup.API.Authorization;
 using HomeGroup.API.Data;
 using HomeGroup.API.Models.DTOs.Planning;
 using HomeGroup.API.Models.Entities;
@@ -13,6 +14,7 @@ namespace HomeGroup.API.Controllers;
 public class PlanTemplatesController(AppDbContext db) : ControllerBase
 {
     [HttpGet]
+    [RequirePermission("planning.view")]
     public async Task<ActionResult<List<PlanTemplateDto>>> GetAll()
     {
         var templates = await db.PlanTemplates
@@ -24,6 +26,7 @@ public class PlanTemplatesController(AppDbContext db) : ControllerBase
     }
 
     [HttpPost]
+    [RequirePermission("planning.templates")]
     public async Task<ActionResult<PlanTemplateDto>> Create(CreatePlanTemplateRequest request)
     {
         if (string.IsNullOrWhiteSpace(request.Name))
@@ -48,6 +51,7 @@ public class PlanTemplatesController(AppDbContext db) : ControllerBase
     }
 
     [HttpDelete("{id}")]
+    [RequirePermission("planning.templates")]
     public async Task<IActionResult> Delete(long id)
     {
         var template = await db.PlanTemplates.FindAsync(id);

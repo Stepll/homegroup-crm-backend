@@ -1,3 +1,4 @@
+using HomeGroup.API.Authorization;
 using HomeGroup.API.Data;
 using HomeGroup.API.Models.DTOs.PersonStatuses;
 using HomeGroup.API.Models.Entities;
@@ -24,6 +25,7 @@ public class PersonStatusesController(AppDbContext db) : ControllerBase
     }
 
     [HttpPost]
+    [RequirePermission("settings.statuses")]
     public async Task<ActionResult<PersonStatusDto>> Create(CreatePersonStatusRequest request)
     {
         if (string.IsNullOrWhiteSpace(request.Name))
@@ -42,6 +44,7 @@ public class PersonStatusesController(AppDbContext db) : ControllerBase
     }
 
     [HttpPut("{id}")]
+    [RequirePermission("settings.statuses")]
     public async Task<ActionResult<PersonStatusDto>> Update(long id, UpdatePersonStatusRequest request)
     {
         var status = await db.PersonStatuses.FindAsync(id);
@@ -59,6 +62,7 @@ public class PersonStatusesController(AppDbContext db) : ControllerBase
     }
 
     [HttpDelete("{id}")]
+    [RequirePermission("settings.statuses")]
     public async Task<IActionResult> Delete(long id)
     {
         var status = await db.PersonStatuses.FindAsync(id);

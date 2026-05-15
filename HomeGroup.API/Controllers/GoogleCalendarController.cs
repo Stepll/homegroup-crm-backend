@@ -1,3 +1,4 @@
+using HomeGroup.API.Authorization;
 using HomeGroup.API.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -10,6 +11,7 @@ namespace HomeGroup.API.Controllers;
 public class GoogleCalendarController(GoogleCalendarSyncService syncService) : ControllerBase
 {
     [HttpPost("sync")]
+    [RequirePermission("calendar.google.sync")]
     public async Task<IActionResult> Sync()
     {
         try
