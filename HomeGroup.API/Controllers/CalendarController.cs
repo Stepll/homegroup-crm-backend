@@ -37,29 +37,42 @@ public class CalendarController(AppDbContext db) : ControllerBase
                 query = query.Where(e => typeList.Contains(e.Type));
         }
 
+        HashSet<long>? groupIdSet = null;
         if (!string.IsNullOrEmpty(groupIds))
         {
-            var ids = groupIds.Split(',').Select(long.Parse).ToHashSet();
+            groupIdSet = groupIds.Split(',').Select(long.Parse).ToHashSet();
             query = query.Where(e =>
                 e.Type != CalendarEventType.HomeGroup ||
-                (e.HomeGroupId.HasValue && ids.Contains(e.HomeGroupId.Value)));
+                (e.HomeGroupId.HasValue && groupIdSet.Contains(e.HomeGroupId.Value)));
         }
 
         var events = await query.ToListAsync();
         var result = new List<CalendarOccurrenceDto>();
 
-        // Helper: get Monday of the week for a date (Mon=start of week)
         static DateOnly GetWeekMonday(DateOnly date) {
-            int dow = (int)date.DayOfWeek; // 0=Sun
+            int dow = (int)date.DayOfWeek;
             int daysFromMonday = dow == 0 ? 6 : dow - 1;
             return date.AddDays(-daysFromMonday);
         }
 
-        // Pre-compute suppressed (HomeGroupId, WeekMonday) pairs
-        // A suppression = non-recurring HomeGroup event with IsHomeGroupMeeting IS NOT NULL
-        var suppressedWeeks = events
-            .Where(e => !e.IsRecurring && e.Type == CalendarEventType.HomeGroup
-                        && e.HomeGroupId.HasValue && e.Date.HasValue && e.IsHomeGroupMeeting.HasValue)
+        // Load suppression markers from full week range (Mon–Sun), independent of types filter.
+        // This ensures a cancellation on any day of the week suppresses the ghost for that week.
+        var weekStart = GetWeekMonday(fromDate);
+        var weekEnd = GetWeekMonday(toDate).AddDays(6);
+        var suppressionQuery = db.CalendarEvents
+            .Where(e => !e.IsRecurring
+                        && e.Type == CalendarEventType.HomeGroup
+                        && e.HomeGroupId.HasValue
+                        && e.Date.HasValue
+                        && e.IsHomeGroupMeeting.HasValue
+                        && e.Date >= weekStart
+                        && e.Date <= weekEnd);
+        if (groupIdSet != null)
+            suppressionQuery = suppressionQuery.Where(e => groupIdSet.Contains(e.HomeGroupId!.Value));
+
+        var suppressedWeeks = (await suppressionQuery
+                .Select(e => new { e.HomeGroupId, e.Date })
+                .ToListAsync())
             .Select(e => (e.HomeGroupId!.Value, GetWeekMonday(e.Date!.Value)))
             .ToHashSet();
 
