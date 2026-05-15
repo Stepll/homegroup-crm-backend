@@ -18,9 +18,10 @@ HomeGroup.API/
   Controllers/
     AuthController.cs            — /api/v1/auth (login)
     GroupsController.cs          — /api/v1/groups (CRUD + members + custom fields +
-                                    cabinet + events + plans + stats + next-meeting)
+                                    cabinet + events + plans + stats + stats/all + next-meeting)
     PeopleController.cs          — /api/v1/people (CRUD + custom field values)
-    AdminsController.cs          — /api/v1/admins (CRUD + profile + set-password)
+    AdminsController.cs          — /api/v1/admins (CRUD + profile + set-password +
+                                    me/dashboard GET/PUT)
     PersonStatusesController.cs  — /api/v1/person-statuses (CRUD)
     RolesController.cs           — /api/v1/roles (CRUD, system role protection)
     AttendanceController.cs      — /api/v1/attendance (records + meta)
@@ -38,6 +39,7 @@ HomeGroup.API/
                                    Phone?, Telegram?, Gender?, MaritalStatus?, Address?,
                                    DateOfBirth?, IsBaptized, Church?, Ministry?,
                                    IsBaptizedWithSpirit, PersonStatusId?,
+                                   DashboardConfigJson? (text, JSON array of WidgetConfig),
                                    PrimaryGroupId, UserRoles[], UserHomeGroups[]
       Person.cs                  — Id, Name, LastName, Phone, Email, Telegram?,
                                    Notes, Gender?, MaritalStatus?, Address?,
@@ -158,6 +160,8 @@ DELETE /api/v1/people/:id/custom-fields/:fieldId
 ### Admins
 ```
 GET    /api/v1/admins/me                       → AdminResponse (поточний юзер)
+GET    /api/v1/admins/me/dashboard             → WidgetConfig[] (конфіг дашборду поточного юзера)
+PUT    /api/v1/admins/me/dashboard             — { config: WidgetConfig[] } → 204
 GET    /api/v1/admins                          → AdminResponse[]
 GET    /api/v1/admins/:id                      → AdminResponse
 POST   /api/v1/admins                          — { name, lastName?, email, password, roleIds[], primaryGroupId?, visibleGroupIds[] }
@@ -168,6 +172,10 @@ PUT    /api/v1/admins/:id/profile              — { phone?, telegram?, gender?,
 POST   /api/v1/admins/:id/set-password        — { newPassword }
 DELETE /api/v1/admins/:id
 ```
+
+**Dashboard config**: `WidgetConfig[] = [{id: string, enabled: bool}]` — зберігається в `User.DashboardConfigJson` як text.
+Порожній масив → фронт показує дефолтні віджети.
+
 
 ### Groups
 ```
@@ -188,6 +196,7 @@ DELETE /api/v1/groups/:id/custom-fields/:fieldId
 
 GET    /api/v1/groups/:id/cabinet              → GroupCabinetResponse (включає HasPlanForNextMeeting,
                                                  TelegramGroupId, CabinetRoleTag для orgTeam)
+GET    /api/v1/groups/stats/all?period=1m|3m|6m → GroupStatsResponse (всі групи агреговано)
 GET    /api/v1/groups/:id/stats?period=1m|3m|6m → GroupStatsResponse
 
 GET    /api/v1/groups/:id/events
@@ -335,6 +344,7 @@ Recurring HomeGroup events є "ghost" — прозорі події-шаблон
     (Type: Recurring|Global|HomeGroup, IsRecurring, RecurringDayOfWeek, StartTime, EndTime, Date)
 13. `AddRoomFields` — Room: Building (default "Church"), Floor (default 1), Color (default "#6B7280")
 14. `AddGoogleCalendarSync` — CalendarEvent: GoogleEventId (nullable string)
+15. `AddDashboardConfig` — User: DashboardConfigJson (text nullable)
 
 ## Development Commands
 
@@ -414,6 +424,8 @@ Nginx проксує на контейнер. SSL через Certbot + Let's Enc
       незалежний від types фільтра; IsHomeGroupMeeting (null/true/false) керує ghost visibility
 - [x] Conflict detection — тільки Recurring/Global/Google, не HomeGroup vs HomeGroup
 - [x] lastMeetingDate — з реальних Attendances записів, не з ComputeLastMeeting по розкладу
+- [x] Dashboard config per user — User.DashboardConfigJson + GET/PUT /admins/me/dashboard
+- [x] GET /groups/stats/all — агрегована статистика по всіх групах для дашборду
 
 ## TODO
 
