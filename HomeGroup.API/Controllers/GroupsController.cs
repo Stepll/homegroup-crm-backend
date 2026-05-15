@@ -335,11 +335,12 @@ public class GroupsController(AppDbContext db) : ControllerBase
         if (string.IsNullOrEmpty(botToken))
             return StatusCode(500, "BOT_TOKEN is not configured");
 
-        var text = FormatPlanMessage(plan, date);
+        var tgMap = await BuildTelegramMap();
+        var text = FormatPlanMessage(plan, date, tgMap);
         var client = httpClientFactory.CreateClient();
         var resp = await client.PostAsJsonAsync(
             $"https://api.telegram.org/bot{botToken}/sendMessage",
-            new { chat_id = group.TelegramGroupId, text, parse_mode = "HTML" }
+            new { chat_id = group.TelegramGroupId, text }
         );
 
         if (!resp.IsSuccessStatusCode)
@@ -351,23 +352,71 @@ public class GroupsController(AppDbContext db) : ControllerBase
         return Ok();
     }
 
-    private static string FormatPlanMessage(HomeMeetingPlan plan, string date)
+    private async Task<Dictionary<string, string>> BuildTelegramMap()
+    {
+        var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        var people = await db.People
+            .Where(p => p.Telegram != null)
+            .Select(p => new { p.Name, p.LastName, p.Telegram })
+            .ToListAsync();
+        var admins = await db.Users
+            .Where(u => u.Telegram != null)
+            .Select(u => new { u.Name, u.LastName, u.Telegram })
+            .ToListAsync();
+
+        foreach (var p in people.Concat(admins.Select(a => new { a.Name, a.LastName, a.Telegram })))
+        {
+            var handle = p.Telegram!.TrimStart('@');
+            map.TryAdd(p.Name.Trim(), handle);
+            if (!string.IsNullOrEmpty(p.LastName))
+                map.TryAdd($"{p.Name} {p.LastName}".Trim(), handle);
+        }
+        return map;
+    }
+
+    private static string ResolveResponsible(string? responsible, Dictionary<string, string> map)
+    {
+        if (string.IsNullOrWhiteSpace(responsible)) return "";
+        responsible = responsible.Trim();
+        if (responsible.StartsWith('@')) return responsible;
+        return map.TryGetValue(responsible, out var handle) ? $"@{handle}" : responsible;
+    }
+
+    private static string FormatPlanMessage(HomeMeetingPlan plan, string date, Dictionary<string, string> tgMap)
     {
         var displayDate = DateOnly.TryParse(date, out var d) ? d.ToString("dd.MM.yyyy") : date;
         var sb = new System.Text.StringBuilder();
-        sb.AppendLine($"📋 <b>План зустрічі — {displayDate}</b>");
-        if (!string.IsNullOrEmpty(plan.AppliedTemplateName))
-            sb.AppendLine($"<i>{plan.AppliedTemplateName}</i>");
-        sb.AppendLine();
-        foreach (var block in plan.Blocks.OrderBy(b => b.Order))
+        sb.AppendLine($"План на {displayDate}");
+        sb.AppendLine("------------------");
+
+        var timeline = plan.Blocks.Where(b => !string.IsNullOrWhiteSpace(b.Time)).OrderBy(b => b.Order);
+        var footer = plan.Blocks.Where(b => string.IsNullOrWhiteSpace(b.Time)).OrderBy(b => b.Order).ToList();
+
+        foreach (var block in timeline)
         {
-            sb.Append($"🕐 {block.Time} — <b>{block.Title}</b>");
-            if (!string.IsNullOrEmpty(block.Responsible))
-                sb.Append($" ({block.Responsible})");
-            sb.AppendLine();
+            var responsible = ResolveResponsible(block.Responsible, tgMap);
+            var line = $"{block.Time} - {block.Title}";
+            if (!string.IsNullOrEmpty(responsible)) line += $": {responsible}";
+            sb.AppendLine(line);
             if (!string.IsNullOrEmpty(block.Info))
-                sb.AppendLine($"   <i>{block.Info}</i>");
+                foreach (var infoLine in block.Info.Split('\n', StringSplitOptions.RemoveEmptyEntries))
+                    if (!string.IsNullOrWhiteSpace(infoLine))
+                        sb.AppendLine($"   • {infoLine.Trim()}");
         }
+
+        if (footer.Count > 0)
+        {
+            sb.AppendLine("------------------");
+            foreach (var block in footer)
+            {
+                var responsible = ResolveResponsible(block.Responsible, tgMap);
+                sb.AppendLine(string.IsNullOrEmpty(responsible)
+                    ? block.Title
+                    : $"{responsible} - {block.Title}");
+            }
+        }
+
         return sb.ToString().Trim();
     }
 
