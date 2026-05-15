@@ -16,6 +16,7 @@ services:
       - SuperAdmin__Password=${SUPERADMIN_PASSWORD}
       - Google__CalendarId=${GOOGLE_CALENDAR_ID}
       - Google__ServiceAccountJson=${GOOGLE_SERVICE_ACCOUNT_JSON}
+      - BOT_TOKEN=${BOT_TOKEN}
     depends_on:
       db:
         condition: service_healthy

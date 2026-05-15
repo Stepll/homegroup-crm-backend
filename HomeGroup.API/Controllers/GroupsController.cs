@@ -315,6 +315,62 @@ public class GroupsController(AppDbContext db) : ControllerBase
             .ToList(),
         p.UpdatedAt);
 
+    [HttpPost("{id}/plans/date/{date}/send-to-telegram")]
+    public async Task<IActionResult> SendPlanToTelegram(
+        long id, string date,
+        [FromServices] IHttpClientFactory httpClientFactory,
+        [FromServices] IConfiguration config)
+    {
+        var group = await db.HomeGroups.FindAsync(id);
+        if (group is null) return NotFound();
+        if (string.IsNullOrEmpty(group.TelegramGroupId))
+            return BadRequest("Group has no Telegram group configured");
+
+        var plan = await db.MeetingPlans
+            .Include(p => p.Blocks.OrderBy(b => b.Order))
+            .FirstOrDefaultAsync(p => p.HomeGroupId == id && p.MeetingDate == date);
+        if (plan is null) return NotFound("No plan for this date");
+
+        var botToken = config["BOT_TOKEN"];
+        if (string.IsNullOrEmpty(botToken))
+            return StatusCode(500, "BOT_TOKEN is not configured");
+
+        var text = FormatPlanMessage(plan, date);
+        var client = httpClientFactory.CreateClient();
+        var resp = await client.PostAsJsonAsync(
+            $"https://api.telegram.org/bot{botToken}/sendMessage",
+            new { chat_id = group.TelegramGroupId, text, parse_mode = "HTML" }
+        );
+
+        if (!resp.IsSuccessStatusCode)
+        {
+            var err = await resp.Content.ReadAsStringAsync();
+            return StatusCode(502, $"Telegram API error: {err}");
+        }
+
+        return Ok();
+    }
+
+    private static string FormatPlanMessage(HomeMeetingPlan plan, string date)
+    {
+        var displayDate = DateOnly.TryParse(date, out var d) ? d.ToString("dd.MM.yyyy") : date;
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine($"📋 <b>План зустрічі — {displayDate}</b>");
+        if (!string.IsNullOrEmpty(plan.AppliedTemplateName))
+            sb.AppendLine($"<i>{plan.AppliedTemplateName}</i>");
+        sb.AppendLine();
+        foreach (var block in plan.Blocks.OrderBy(b => b.Order))
+        {
+            sb.Append($"🕐 {block.Time} — <b>{block.Title}</b>");
+            if (!string.IsNullOrEmpty(block.Responsible))
+                sb.Append($" ({block.Responsible})");
+            sb.AppendLine();
+            if (!string.IsNullOrEmpty(block.Info))
+                sb.AppendLine($"   <i>{block.Info}</i>");
+        }
+        return sb.ToString().Trim();
+    }
+
     [HttpGet("{id}/events")]
     public async Task<ActionResult<List<GroupEventDto>>> GetEvents(long id)
     {
