@@ -12,7 +12,8 @@ public record GroupCabinetResponse(
     long? NextMeetingRoomId = null,
     List<CabinetCalendarEvent>? NextMeetingEvents = null,
     List<CabinetCalendarEvent>? NextMeetingConflicts = null,
-    bool AutoBookEnabled = false);
+    bool AutoBookEnabled = false,
+    string? PrevScheduledMeetingDate = null);
 
 public record CabinetGroupInfo(
     long Id, string Name, string Color,

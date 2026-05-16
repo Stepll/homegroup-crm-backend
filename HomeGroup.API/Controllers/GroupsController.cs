@@ -699,6 +699,8 @@ public class GroupsController(AppDbContext db) : ControllerBase
             }
         }
 
+        var prevScheduled = ComputeLastMeeting(group.MeetingDay, group.MeetingTime, today, nowTime);
+
         return Ok(new GroupCabinetResponse(
             new CabinetGroupInfo(group.Id, group.Name, group.Color, group.MeetingDay, group.MeetingTime, group.Location, group.TelegramGroupId, group.MeetingEndTime, group.AutoBookRoomId),
             nextMeetingStr,
@@ -711,7 +713,8 @@ public class GroupsController(AppDbContext db) : ControllerBase
             nextMeetingRoomId,
             nextMeetingEvents,
             nextMeetingConflicts,
-            group.AutoBookRoomId.HasValue));
+            group.AutoBookRoomId.HasValue,
+            prevScheduled?.ToString("yyyy-MM-dd")));
     }
 
     [HttpGet("stats/all")]
@@ -1054,7 +1057,7 @@ public class GroupsController(AppDbContext db) : ControllerBase
                 daysAgo = 7;
         }
 
-        return today.AddDays(-daysAgo == 0 ? -7 : -daysAgo);
+        return today.AddDays(-daysAgo);
     }
 
     [HttpPut("{id}/book-room")]
