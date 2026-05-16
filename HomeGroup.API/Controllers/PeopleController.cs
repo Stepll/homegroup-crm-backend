@@ -141,6 +141,11 @@ public class PeopleController(AppDbContext db) : ControllerBase
 
         db.People.Add(person);
         await db.SaveChangesAsync();
+
+        if (person.PrimaryGroupId.HasValue)
+            db.HomeGroupMembers.Add(new HomeGroupMember { HomeGroupId = person.PrimaryGroupId.Value, PersonId = person.Id });
+        await db.SaveChangesAsync();
+
         await db.Entry(person).Reference(p => p.PrimaryGroup).LoadAsync();
 
         return CreatedAtAction(nameof(GetById), new { id = person.Id }, new PersonDetailResponse(
