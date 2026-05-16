@@ -20,8 +20,8 @@ HomeGroup.API/
     GroupsController.cs          — /api/v1/groups (CRUD + members + custom fields +
                                     cabinet + events + plans + stats + stats/all + next-meeting)
     PeopleController.cs          — /api/v1/people (CRUD + custom field values)
-    AdminsController.cs          — /api/v1/admins (CRUD + profile + set-password +
-                                    me/dashboard GET/PUT)
+    AdminsController.cs          — /api/v1/admins (CRUD + profile + me/set-password (no perm) +
+                                    :id/set-password (settings.admins) + me/dashboard GET/PUT)
     PersonStatusesController.cs  — /api/v1/person-statuses (CRUD)
     RolesController.cs           — /api/v1/roles (CRUD, system role protection)
     AttendanceController.cs      — /api/v1/attendance (records + meta)
@@ -160,17 +160,18 @@ DELETE /api/v1/people/:id/custom-fields/:fieldId
 ### Admins
 ```
 GET    /api/v1/admins/me                       → AdminResponse (поточний юзер)
+POST   /api/v1/admins/me/set-password         — { newPassword } — БЕЗ RequirePermission, будь-який auth юзер
 GET    /api/v1/admins/me/dashboard             → WidgetConfig[] (конфіг дашборду поточного юзера)
 PUT    /api/v1/admins/me/dashboard             — { config: WidgetConfig[] } → 204
-GET    /api/v1/admins                          → AdminResponse[]
+GET    /api/v1/admins                          → AdminResponse[] [settings.admins]
 GET    /api/v1/admins/:id                      → AdminResponse
-POST   /api/v1/admins                          — { name, lastName?, email, password, roleIds[], primaryGroupId?, visibleGroupIds[] }
-PUT    /api/v1/admins/:id                      — { name, lastName?, email, roleIds[], primaryGroupId?, visibleGroupIds[] }
+POST   /api/v1/admins                          — { name, lastName?, email, password, roleIds[], primaryGroupId?, visibleGroupIds[] } [settings.admins]
+PUT    /api/v1/admins/:id                      — { name, lastName?, email, roleIds[], primaryGroupId?, visibleGroupIds[] } [settings.admins]
 PUT    /api/v1/admins/:id/profile              — { phone?, telegram?, gender?, maritalStatus?, address?,
                                                    dateOfBirth?, isBaptized, church?, ministry?,
                                                    isBaptizedWithSpirit, personStatusId? }
-POST   /api/v1/admins/:id/set-password        — { newPassword }
-DELETE /api/v1/admins/:id
+POST   /api/v1/admins/:id/set-password        — { newPassword } [settings.admins]
+DELETE /api/v1/admins/:id                      [settings.admins]
 ```
 
 **Dashboard config**: `WidgetConfig[] = [{id: string, enabled: bool}]` — зберігається в `User.DashboardConfigJson` як text.
@@ -279,6 +280,17 @@ DELETE /api/v1/person-statuses/:id
 Створюється через raw SQL в `Program.cs` щоб обійти EF Core auto-increment. Параметри з env: `SUPERADMIN_EMAIL`, `SUPERADMIN_PASSWORD`.
 - Виключається з `GetCabinet` org team запиту: `&& u.Id != 0`
 - Обходить фільтр видимих груп у `PeopleController`
+
+### Permissions enforcement
+`RequirePermissionAttribute` (`HomeGroup.API/Authorization/RequirePermissionAttribute.cs`) — `IAuthorizationFilter`.
+- Перевіряє JWT claim `"permission"` (один claim на кожен ключ)
+- Wildcard `"*"` = superadmin (повний доступ)
+- Повертає 403 з `{ message: "Недостатньо прав доступу" }`
+
+Permissions baked into JWT at login: `JwtService.GetMergedPermissions(user)` — об'єднує permissions з усіх ролей.
+`AuthResponse` повертає `List<string> Permissions` — фронт зберігає в localStorage і перевіряє локально.
+
+**Важливо**: `POST /admins/me/set-password` — без `[RequirePermission]`, будь-який авторизований юзер може змінити свій пароль. `POST /admins/:id/set-password` — потребує `settings.admins`.
 
 ### Role.PermissionsJson
 Зберігається як text (не JSONB), серіалізується через extension methods `GetPermissions()` / `SetPermissions()`.
@@ -430,11 +442,14 @@ Nginx проксує на контейнер. SSL через Certbot + Let's Enc
       Формат: plain text, блоки без часу → футер, відповідальний резолвиться до @telegram через People/Users lookup
       Потребує BOT_TOKEN env var в api сервісі
 - [x] GET /groups/:id/events — повертає всі події без ліміту (прибрано Take(5))
+- [x] RequirePermissionAttribute — IAuthorizationFilter, перевіряє JWT claim "permission", wildcard "*"
+- [x] JwtService.GetMergedPermissions — об'єднує permissions з усіх ролей, додає до JWT + AuthResponse
+- [x] Всі ендпоінти захищені відповідними [RequirePermission("...")] атрибутами
+- [x] POST /admins/me/set-password — без RequirePermission, будь-який юзер може змінити свій пароль
 
 ## TODO
 
 - [ ] Опіка (Oversight) — configurable list
-- [ ] Реальний enforcement прав доступу на основі Role.PermissionsJson
 - [ ] Refresh tokens
 - [ ] Pagination для великих списків
 - [ ] Swagger / OpenAPI
