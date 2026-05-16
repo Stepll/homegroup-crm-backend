@@ -127,6 +127,20 @@ public class AdminsController(AppDbContext db) : ControllerBase
         return Ok(ToResponse(updated!));
     }
 
+    [HttpPost("me/set-password")]
+    public async Task<IActionResult> SetMyPassword(SetPasswordRequest request)
+    {
+        var idClaim = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (!long.TryParse(idClaim, out var userId)) return Unauthorized();
+
+        var admin = await db.Users.FindAsync(userId);
+        if (admin is null) return NotFound();
+
+        admin.PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.NewPassword);
+        await db.SaveChangesAsync();
+        return NoContent();
+    }
+
     [HttpPost("{id:long}/set-password")]
     [RequirePermission("settings.admins")]
     public async Task<IActionResult> SetPassword(long id, SetPasswordRequest request)
