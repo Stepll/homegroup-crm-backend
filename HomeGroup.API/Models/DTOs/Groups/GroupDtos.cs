@@ -36,4 +36,5 @@ public record GroupMemberResponse(
     DateTime CreatedAt,
     bool IsAdmin,
     long? UserId,
-    MemberRoleTagDto? RoleTag);
+    MemberRoleTagDto? RoleTag,
+    string? OversightUserName = null);

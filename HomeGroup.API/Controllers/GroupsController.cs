@@ -54,13 +54,15 @@ public class GroupsController(AppDbContext db) : ControllerBase
             .Where(m => m.HomeGroupId == id)
             .Include(m => m.Person).ThenInclude(p => p.PersonStatus)
             .Include(m => m.Person).ThenInclude(p => p.PrimaryGroup)
+            .Include(m => m.Person).ThenInclude(p => p.OversightUser)
             .OrderBy(m => m.Person.Name)
             .Select(m => new GroupMemberResponse(
                 m.Person.Id, m.Person.Name, m.Person.LastName, m.Person.Phone, m.Person.Email, m.Person.Notes,
                 m.Person.PersonStatus != null ? new PersonStatusDto(m.Person.PersonStatus.Id, m.Person.PersonStatus.Name, m.Person.PersonStatus.Color) : null,
                 m.Person.PrimaryGroupId, m.Person.PrimaryGroup != null ? m.Person.PrimaryGroup.Name : null,
                 m.Person.PrimaryGroup != null ? m.Person.PrimaryGroup.Color : null,
-                m.Person.CreatedAt, false, null, null))
+                m.Person.CreatedAt, false, null, null,
+                m.Person.OversightUser != null ? m.Person.OversightUser.Name + (m.Person.OversightUser.LastName != null ? " " + m.Person.OversightUser.LastName : "") : null))
             .ToListAsync();
 
         var adminMembers = await db.Users

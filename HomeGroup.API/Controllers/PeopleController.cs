@@ -37,7 +37,7 @@ public class PeopleController(AppDbContext db) : ControllerBase
         }
 
         // ── Persons ───────────────────────────────────────────────────────────
-        var query = db.People.Include(p => p.PrimaryGroup).Include(p => p.PersonStatus).AsQueryable();
+        var query = db.People.Include(p => p.PrimaryGroup).Include(p => p.PersonStatus).Include(p => p.OversightUser).AsQueryable();
 
         if (!string.IsNullOrWhiteSpace(search))
             query = query.Where(p =>
@@ -60,7 +60,8 @@ public class PeopleController(AppDbContext db) : ControllerBase
             p.Id, p.Name, p.LastName, p.Phone, p.Email, p.Notes,
             p.PersonStatus != null ? new PersonStatusDto(p.PersonStatus.Id, p.PersonStatus.Name, p.PersonStatus.Color) : null,
             p.PrimaryGroupId, p.PrimaryGroup?.Name, p.PrimaryGroup?.Color,
-            p.CreatedAt, false, null, null)).ToList();
+            p.CreatedAt, false, null, null,
+            p.OversightUser is null ? null : $"{p.OversightUser.Name}{(p.OversightUser.LastName is null ? "" : " " + p.OversightUser.LastName)}")).ToList();
 
         // ── Admins ────────────────────────────────────────────────────────────
         if (includeAdmins && !myOversight && !noGroup)
