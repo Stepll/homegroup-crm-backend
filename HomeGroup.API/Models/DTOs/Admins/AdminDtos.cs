@@ -60,7 +60,9 @@ public record UpdateAdminProfileRequest(
     string? Church,
     string? Ministry,
     bool IsBaptizedWithSpirit,
-    long? PersonStatusId);
+    long? PersonStatusId,
+    string? Name = null,
+    string? LastName = null);
 
 public record SetPasswordRequest(string NewPassword);
 
