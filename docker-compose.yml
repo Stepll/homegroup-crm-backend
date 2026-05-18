@@ -46,6 +46,7 @@ services:
       - API_BASE_URL=http://api:8080
       - API_EMAIL=${SUPERADMIN_EMAIL}
       - API_PASSWORD=${SUPERADMIN_PASSWORD}
+      - WEBSITE_URL=${WEBSITE_URL}
     depends_on:
       api:
         condition: service_started
