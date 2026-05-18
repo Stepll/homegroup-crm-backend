@@ -110,7 +110,7 @@ public class AdminsController(AppDbContext db) : ControllerBase
         if (admin is null) return NotFound();
 
         if (!string.IsNullOrWhiteSpace(request.Name)) admin.Name = request.Name.Trim();
-        admin.LastName = string.IsNullOrWhiteSpace(request.LastName) ? null : request.LastName.Trim();
+        if (request.LastName is not null) admin.LastName = string.IsNullOrWhiteSpace(request.LastName) ? null : request.LastName.Trim();
         admin.Phone = request.Phone?.Trim();
         admin.Telegram = request.Telegram?.Trim();
         admin.Notes = request.Notes?.Trim();
