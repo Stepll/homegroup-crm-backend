@@ -8,6 +8,36 @@ public record AttendanceResponse(long Id, long? PersonId, long? UserId, string M
 
 public record AttendanceSummary(DateOnly MeetingDate, int TotalMembers, int PresentCount, double AttendanceRate);
 
-public record AttendanceMetaResponse(int GuestCount, string? GuestInfo);
+public record AttendanceMetaResponse(int GuestCount, string? GuestInfo, string? Notes, bool IsCancelled);
 
-public record SaveAttendanceMetaRequest(long HomeGroupId, DateOnly MeetingDate, int GuestCount, string? GuestInfo);
+public record SaveAttendanceMetaRequest(long HomeGroupId, DateOnly MeetingDate, int GuestCount, string? GuestInfo, string? Notes, bool IsCancelled);
+
+// Attendance table (GET /groups/:id/attendance-table)
+
+public record AttendanceTableResponse(
+    List<string> Dates,
+    List<AttendanceTableMeeting> Meetings,
+    List<AttendanceTableMember> Members);
+
+public record AttendanceTableMeeting(
+    string Date,
+    int GuestCount,
+    string? GuestInfo,
+    string? Notes,
+    bool IsCancelled,
+    bool IsInDb);
+
+public record AttendanceTableMember(
+    long? PersonId,
+    long? UserId,
+    string Name,
+    string? LastName,
+    string JoinedAt,
+    double AttendanceRate,
+    Dictionary<string, bool> Attendance);
+
+public record BulkAttendanceEntry(string Date, long? PersonId, long? UserId, bool WasPresent);
+
+public record BulkRecordAttendanceRequest(long HomeGroupId, List<BulkAttendanceEntry> Entries);
+
+public record DeleteMeetingRequest(long HomeGroupId, DateOnly MeetingDate);

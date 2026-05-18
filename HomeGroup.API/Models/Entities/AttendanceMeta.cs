@@ -8,4 +8,6 @@ public class AttendanceMeta
     public DateOnly MeetingDate { get; set; }
     public int GuestCount { get; set; }
     public string? GuestInfo { get; set; }
+    public string? Notes { get; set; }
+    public bool IsCancelled { get; set; }
 }
