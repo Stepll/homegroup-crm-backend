@@ -202,6 +202,7 @@ GET    /api/v1/groups/:id/stats?period=1m|3m|6m → GroupStatsResponse
 
 GET    /api/v1/groups/:id/events
 POST   /api/v1/groups/:id/events               — { name, month, day, year? }
+PUT    /api/v1/groups/:id/events/:eventId      — { name, month, day, year? }
 DELETE /api/v1/groups/:id/events/:eventId
 
 GET    /api/v1/groups/:id/plans
@@ -442,6 +443,8 @@ Nginx проксує на контейнер. SSL через Certbot + Let's Enc
       Формат: plain text, блоки без часу → футер, відповідальний резолвиться до @telegram через People/Users lookup
       Потребує BOT_TOKEN env var в api сервісі
 - [x] GET /groups/:id/events — повертає всі події без ліміту (прибрано Take(5))
+- [x] PUT /groups/:id/events/:eventId — редагування події (UpdateGroupEventRequest: name, month, day, year?)
+- [x] docker-compose: WEBSITE_URL env var передається в bot сервіс
 - [x] RequirePermissionAttribute — IAuthorizationFilter, перевіряє JWT claim "permission", wildcard "*"
 - [x] JwtService.GetMergedPermissions — об'єднує permissions з усіх ролей, додає до JWT + AuthResponse
 - [x] Всі ендпоінти захищені відповідними [RequirePermission("...")] атрибутами
