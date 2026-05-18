@@ -475,6 +475,21 @@ public class GroupsController(AppDbContext db) : ControllerBase
         return Ok(new GroupEventDto(evt.Id, evt.Name, evt.Month, evt.Day, evt.Year, ComputeDaysUntil(evt.Month, evt.Day, evt.Year, today)));
     }
 
+    [HttpPut("{id}/events/{eventId}")]
+    [RequirePermission("groups.events.manage")]
+    public async Task<ActionResult<GroupEventDto>> UpdateEvent(long id, long eventId, UpdateGroupEventRequest request)
+    {
+        var evt = await db.GroupEvents.FirstOrDefaultAsync(e => e.Id == eventId && e.HomeGroupId == id);
+        if (evt is null) return NotFound();
+        evt.Name = request.Name.Trim();
+        evt.Month = request.Month;
+        evt.Day = request.Day;
+        evt.Year = request.Year;
+        await db.SaveChangesAsync();
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        return Ok(new GroupEventDto(evt.Id, evt.Name, evt.Month, evt.Day, evt.Year, ComputeDaysUntil(evt.Month, evt.Day, evt.Year, today)));
+    }
+
     [HttpDelete("{id}/events/{eventId}")]
     [RequirePermission("groups.events.manage")]
     public async Task<IActionResult> DeleteEvent(long id, long eventId)

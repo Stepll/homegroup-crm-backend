@@ -50,3 +50,4 @@ public record CabinetStats(double AvgAttendanceRate, int NewMembersThisMonth, in
 
 public record GroupEventDto(long Id, string Name, int Month, int Day, int? Year, int DaysUntil);
 public record CreateGroupEventRequest(string Name, int Month, int Day, int? Year);
+public record UpdateGroupEventRequest(string Name, int Month, int Day, int? Year);
