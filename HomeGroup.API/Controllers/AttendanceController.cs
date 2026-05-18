@@ -344,37 +344,35 @@ public class AttendanceController(AppDbContext db) : ControllerBase
 
         foreach (var pm in personMembers)
         {
-            var joinedAt = DateOnly.FromDateTime(pm.JoinedAt);
             var attendanceMap = BuildAttendanceMap(
-                dates, joinedAt,
+                dates,
                 attendanceRecords.Where(a => a.PersonId == pm.PersonId).ToList());
 
             var rate = CalcRate(
                 allAttendance.Where(a => a.PersonId == pm.PersonId).ToList(),
-                cancelledDates, joinedAt);
+                cancelledDates);
 
             members.Add(new AttendanceTableMember(
                 pm.PersonId, null,
                 pm.Person.Name, pm.Person.LastName,
-                joinedAt.ToString("yyyy-MM-dd"),
+                DateOnly.FromDateTime(pm.JoinedAt).ToString("yyyy-MM-dd"),
                 rate, attendanceMap));
         }
 
         foreach (var um in userMembers)
         {
-            var joinedAt = DateOnly.FromDateTime(um.AssignedAt);
             var attendanceMap = BuildAttendanceMap(
-                dates, joinedAt,
+                dates,
                 attendanceRecords.Where(a => a.UserId == um.UserId).ToList());
 
             var rate = CalcRate(
                 allAttendance.Where(a => a.UserId == um.UserId).ToList(),
-                cancelledDates, joinedAt);
+                cancelledDates);
 
             members.Add(new AttendanceTableMember(
                 null, um.UserId,
                 um.User.Name, um.User.LastName,
-                joinedAt.ToString("yyyy-MM-dd"),
+                DateOnly.FromDateTime(um.AssignedAt).ToString("yyyy-MM-dd"),
                 rate, attendanceMap));
         }
 
@@ -386,7 +384,6 @@ public class AttendanceController(AppDbContext db) : ControllerBase
 
     private static Dictionary<string, bool> BuildAttendanceMap(
         List<DateOnly> dates,
-        DateOnly joinedAt,
         List<Attendance> memberRecords)
     {
         var recordByDate = memberRecords.ToDictionary(a => a.MeetingDate, a => a.WasPresent);
@@ -394,10 +391,7 @@ public class AttendanceController(AppDbContext db) : ControllerBase
 
         foreach (var date in dates)
         {
-            if (date < joinedAt) continue; // gray / disabled — not included
-
             var key = date.ToString("yyyy-MM-dd");
-            // Default to absent (false) if no record exists
             map[key] = recordByDate.TryGetValue(date, out var val) ? val : false;
         }
 
@@ -406,11 +400,10 @@ public class AttendanceController(AppDbContext db) : ControllerBase
 
     private static double CalcRate(
         List<Attendance> allRecords,
-        HashSet<DateOnly> cancelledDates,
-        DateOnly joinedAt)
+        HashSet<DateOnly> cancelledDates)
     {
         var eligible = allRecords
-            .Where(a => a.MeetingDate >= joinedAt && !cancelledDates.Contains(a.MeetingDate))
+            .Where(a => !cancelledDates.Contains(a.MeetingDate))
             .ToList();
 
         if (eligible.Count == 0) return 0;
