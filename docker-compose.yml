@@ -50,6 +50,9 @@ services:
       api:
         condition: service_started
     restart: unless-stopped
+    volumes:
+      - bot_data:/app/data
 
 volumes:
   postgres_data:
+  bot_data:
