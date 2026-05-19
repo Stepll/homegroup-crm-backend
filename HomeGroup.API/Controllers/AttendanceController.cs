@@ -209,6 +209,35 @@ public class AttendanceController(AppDbContext db) : ControllerBase
         return Ok();
     }
 
+    [HttpGet("dots")]
+    [RequirePermission("attendance.view")]
+    public async Task<ActionResult<AttendanceDotsResponse>> GetDots(
+        [FromQuery] long groupId, [FromQuery] int limit = 5)
+    {
+        var dates = await db.Attendances
+            .Where(a => a.HomeGroupId == groupId)
+            .Select(a => a.MeetingDate)
+            .Distinct()
+            .OrderByDescending(d => d)
+            .Take(limit)
+            .ToListAsync();
+
+        var cancelledDates = await db.AttendanceMetas
+            .Where(m => m.HomeGroupId == groupId && m.IsCancelled && dates.Contains(m.MeetingDate))
+            .Select(m => m.MeetingDate)
+            .ToListAsync();
+
+        var records = await db.Attendances
+            .Where(a => a.HomeGroupId == groupId && dates.Contains(a.MeetingDate))
+            .Select(a => new AttendanceDotRecord(a.PersonId, a.UserId, a.MeetingDate.ToString("yyyy-MM-dd"), a.WasPresent))
+            .ToListAsync();
+
+        return Ok(new AttendanceDotsResponse(
+            dates.Select(d => d.ToString("yyyy-MM-dd")).ToArray(),
+            cancelledDates.Select(d => d.ToString("yyyy-MM-dd")).ToArray(),
+            records.ToArray()));
+    }
+
     [HttpDelete("meeting")]
     [RequirePermission("attendance.record")]
     public async Task<IActionResult> DeleteMeeting([FromQuery] long groupId, [FromQuery] DateOnly date)

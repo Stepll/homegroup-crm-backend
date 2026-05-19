@@ -41,3 +41,6 @@ public record BulkAttendanceEntry(string Date, long? PersonId, long? UserId, boo
 public record BulkRecordAttendanceRequest(long HomeGroupId, List<BulkAttendanceEntry> Entries);
 
 public record DeleteMeetingRequest(long HomeGroupId, DateOnly MeetingDate);
+
+public record AttendanceDotRecord(long? PersonId, long? UserId, string Date, bool WasPresent);
+public record AttendanceDotsResponse(string[] Dates, string[] CancelledDates, AttendanceDotRecord[] Records);
