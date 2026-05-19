@@ -337,6 +337,18 @@ public class PeopleController(AppDbContext db) : ControllerBase
             entry.CreatedAt));
     }
 
+    [HttpDelete("{id}/activity/{entryId}")]
+    [RequirePermission("people.edit")]
+    public async Task<IActionResult> DeleteActivity(long id, long entryId)
+    {
+        var entry = await db.PersonActivities
+            .FirstOrDefaultAsync(a => a.Id == entryId && a.PersonId == id && a.Type == "comment");
+        if (entry is null) return NotFound();
+        db.PersonActivities.Remove(entry);
+        await db.SaveChangesAsync();
+        return NoContent();
+    }
+
     // Custom fields — definitions live on the HomeGroup, values are per-person
 
     [HttpPost("{id}/custom-fields")]
