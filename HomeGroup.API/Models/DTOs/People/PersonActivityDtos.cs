@@ -10,6 +10,8 @@ public record PersonActivityDto(
     string? AuthorName,
     PersonStatusDto? OldStatus,
     PersonStatusDto? NewStatus,
+    string? OldValue,
+    string? NewValue,
     DateTime CreatedAt);
 
 public record AddPersonCommentRequest(string Content);

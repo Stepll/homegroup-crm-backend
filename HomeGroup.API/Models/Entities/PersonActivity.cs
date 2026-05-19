@@ -6,7 +6,7 @@ public class PersonActivity
     public long PersonId { get; set; }
     public Person Person { get; set; } = null!;
 
-    public string Type { get; set; } = "comment"; // "comment" | "status_change"
+    public string Type { get; set; } = "comment"; // "comment" | "status_change" | "oversight_change"
 
     public string? Content { get; set; }
 
@@ -20,6 +20,10 @@ public class PersonActivity
     public long? NewStatusId { get; set; }
     public string? NewStatusName { get; set; }
     public string? NewStatusColor { get; set; }
+
+    // Generic old/new value for non-status system events (e.g. oversight_change)
+    public string? OldValue { get; set; }
+    public string? NewValue { get; set; }
 
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }

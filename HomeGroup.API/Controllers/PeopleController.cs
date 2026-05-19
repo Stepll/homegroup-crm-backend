@@ -175,6 +175,9 @@ public class PeopleController(AppDbContext db) : ControllerBase
         var oldStatusId = person.PersonStatusId;
         var oldStatusName = person.PersonStatus?.Name;
         var oldStatusColor = person.PersonStatus?.Color;
+        var oldOversightUserId = person.OversightUserId;
+        var oldOversightUserName = person.OversightUser is null ? null
+            : $"{person.OversightUser.Name}{(person.OversightUser.LastName is null ? "" : " " + person.OversightUser.LastName)}";
 
         person.Name = request.Name.Trim();
         person.LastName = request.LastName?.Trim();
@@ -216,14 +219,16 @@ public class PeopleController(AppDbContext db) : ControllerBase
         await db.Entry(person).Reference(p => p.OversightUser).LoadAsync();
         await db.Entry(person).Reference(p => p.PersonStatus).LoadAsync();
 
+        long.TryParse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value, out var actorId);
+        var actorIdNullable = actorId == 0 ? (long?)null : actorId;
+
         if (oldStatusId != request.PersonStatusId)
         {
-            long.TryParse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value, out var authorId);
             db.PersonActivities.Add(new PersonActivityEntity
             {
                 PersonId = id,
                 Type = "status_change",
-                AuthorId = authorId == 0 ? null : authorId,
+                AuthorId = actorIdNullable,
                 OldStatusId = oldStatusId,
                 OldStatusName = oldStatusName,
                 OldStatusColor = oldStatusColor,
@@ -231,8 +236,24 @@ public class PeopleController(AppDbContext db) : ControllerBase
                 NewStatusName = person.PersonStatus?.Name,
                 NewStatusColor = person.PersonStatus?.Color,
             });
-            await db.SaveChangesAsync();
         }
+
+        if (oldOversightUserId != request.OversightUserId)
+        {
+            var newOversightName = person.OversightUser is null ? null
+                : $"{person.OversightUser.Name}{(person.OversightUser.LastName is null ? "" : " " + person.OversightUser.LastName)}";
+            db.PersonActivities.Add(new PersonActivityEntity
+            {
+                PersonId = id,
+                Type = "oversight_change",
+                AuthorId = actorIdNullable,
+                OldValue = oldOversightUserName,
+                NewValue = newOversightName,
+            });
+        }
+
+        if (oldStatusId != request.PersonStatusId || oldOversightUserId != request.OversightUserId)
+            await db.SaveChangesAsync();
 
         var updatedStatusDto = person.PersonStatus is null ? null : new PersonStatusDto(person.PersonStatus.Id, person.PersonStatus.Name, person.PersonStatus.Color);
 
@@ -279,6 +300,8 @@ public class PeopleController(AppDbContext db) : ControllerBase
             a.Author is null ? null : $"{a.Author.Name}{(a.Author.LastName is null ? "" : " " + a.Author.LastName)}",
             a.OldStatusId is null && a.OldStatusName is null ? null : new PersonStatusDto(a.OldStatusId ?? 0, a.OldStatusName ?? "", a.OldStatusColor ?? "#888"),
             a.NewStatusId is null && a.NewStatusName is null ? null : new PersonStatusDto(a.NewStatusId ?? 0, a.NewStatusName ?? "", a.NewStatusColor ?? "#888"),
+            a.OldValue,
+            a.NewValue,
             a.CreatedAt)).ToList());
     }
 
@@ -310,7 +333,7 @@ public class PeopleController(AppDbContext db) : ControllerBase
             entry.Content,
             entry.AuthorId,
             entry.Author is null ? null : $"{entry.Author.Name}{(entry.Author.LastName is null ? "" : " " + entry.Author.LastName)}",
-            null, null,
+            null, null, null, null,
             entry.CreatedAt));
     }
 
