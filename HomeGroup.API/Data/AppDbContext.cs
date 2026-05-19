@@ -25,6 +25,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<MeetingPlanBlock> MeetingPlanBlocks => Set<MeetingPlanBlock>();
     public DbSet<PersonStatus> PersonStatuses => Set<PersonStatus>();
     public DbSet<PersonActivity> PersonActivities => Set<PersonActivity>();
+    public DbSet<AdminTask> AdminTasks => Set<AdminTask>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -205,6 +206,18 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             .WithMany(p => p.Blocks)
             .HasForeignKey(b => b.PlanId)
             .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<AdminTask>()
+            .HasOne(t => t.TargetUser)
+            .WithMany()
+            .HasForeignKey(t => t.TargetUserId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<AdminTask>()
+            .HasOne(t => t.CreatedBy)
+            .WithMany()
+            .HasForeignKey(t => t.CreatedByUserId)
+            .OnDelete(DeleteBehavior.SetNull);
 
         modelBuilder.Entity<PersonActivity>()
             .HasOne(a => a.Person)

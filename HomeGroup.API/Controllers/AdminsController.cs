@@ -233,6 +233,97 @@ public class AdminsController(AppDbContext db) : ControllerBase
             .Include(u => u.PersonStatus)
             .FirstOrDefaultAsync(u => u.Id == id);
 
+    // ── Tasks ─────────────────────────────────────────────────────────────────
+
+    [HttpGet("{id}/tasks")]
+    [RequirePermission("admins.viewProfiles")]
+    public async Task<ActionResult<List<AdminTaskDto>>> GetTasks(long id)
+    {
+        if (!await db.Users.AnyAsync(u => u.Id == id)) return NotFound();
+
+        var tasks = await db.AdminTasks
+            .Include(t => t.CreatedBy)
+            .Where(t => t.TargetUserId == id)
+            .OrderByDescending(t => t.CreatedAt)
+            .ToListAsync();
+
+        return Ok(tasks.Select(ToTaskDto).ToList());
+    }
+
+    [HttpPost("{id}/tasks")]
+    [RequirePermission("admins.viewProfiles")]
+    public async Task<ActionResult<AdminTaskDto>> CreateTask(long id, CreateAdminTaskRequest request)
+    {
+        if (!await db.Users.AnyAsync(u => u.Id == id)) return NotFound();
+        if (string.IsNullOrWhiteSpace(request.Title))
+            return BadRequest(new { message = "Назва обов'язкова" });
+
+        long.TryParse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value, out var actorId);
+
+        var task = new AdminTask
+        {
+            TargetUserId = id,
+            Title = request.Title.Trim(),
+            Description = request.Description?.Trim(),
+            CreatedByUserId = actorId == 0 ? null : actorId,
+        };
+        db.AdminTasks.Add(task);
+        await db.SaveChangesAsync();
+        await db.Entry(task).Reference(t => t.CreatedBy).LoadAsync();
+
+        return Ok(ToTaskDto(task));
+    }
+
+    [HttpPut("{id}/tasks/{taskId}")]
+    [RequirePermission("admins.viewProfiles")]
+    public async Task<ActionResult<AdminTaskDto>> UpdateTask(long id, long taskId, UpdateAdminTaskRequest request)
+    {
+        var task = await db.AdminTasks.Include(t => t.CreatedBy)
+            .FirstOrDefaultAsync(t => t.Id == taskId && t.TargetUserId == id);
+        if (task is null) return NotFound();
+        if (string.IsNullOrWhiteSpace(request.Title))
+            return BadRequest(new { message = "Назва обов'язкова" });
+
+        task.Title = request.Title.Trim();
+        task.Description = request.Description?.Trim();
+        await db.SaveChangesAsync();
+
+        return Ok(ToTaskDto(task));
+    }
+
+    [HttpPatch("{id}/tasks/{taskId}/toggle")]
+    [RequirePermission("admins.viewProfiles")]
+    public async Task<ActionResult<AdminTaskDto>> ToggleTask(long id, long taskId)
+    {
+        var task = await db.AdminTasks.Include(t => t.CreatedBy)
+            .FirstOrDefaultAsync(t => t.Id == taskId && t.TargetUserId == id);
+        if (task is null) return NotFound();
+
+        task.IsCompleted = !task.IsCompleted;
+        await db.SaveChangesAsync();
+
+        return Ok(ToTaskDto(task));
+    }
+
+    [HttpDelete("{id}/tasks/{taskId}")]
+    [RequirePermission("admins.viewProfiles")]
+    public async Task<IActionResult> DeleteTask(long id, long taskId)
+    {
+        var task = await db.AdminTasks
+            .FirstOrDefaultAsync(t => t.Id == taskId && t.TargetUserId == id);
+        if (task is null) return NotFound();
+
+        db.AdminTasks.Remove(task);
+        await db.SaveChangesAsync();
+        return NoContent();
+    }
+
+    private static AdminTaskDto ToTaskDto(AdminTask t) => new(
+        t.Id, t.Title, t.Description, t.IsCompleted,
+        t.CreatedByUserId,
+        t.CreatedBy is null ? null : $"{t.CreatedBy.Name}{(t.CreatedBy.LastName is null ? "" : " " + t.CreatedBy.LastName)}",
+        t.CreatedAt);
+
     private static AdminResponse ToResponse(User u) => new(
         u.Id,
         u.Name,
