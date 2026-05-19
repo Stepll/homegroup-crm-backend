@@ -152,6 +152,9 @@ POST   /api/v1/people
 PUT    /api/v1/people/:id                      — синхронізує HomeGroupMembers
 DELETE /api/v1/people/:id
 
+GET    /api/v1/people/:id/activity             → PersonActivityDto[] (comments + status_change, desc)
+POST   /api/v1/people/:id/comments             — { content } → PersonActivityDto
+
 POST   /api/v1/people/:id/custom-fields
 PUT    /api/v1/people/:id/custom-fields/:fieldId
 DELETE /api/v1/people/:id/custom-fields/:fieldId
@@ -358,6 +361,8 @@ Recurring HomeGroup events є "ghost" — прозорі події-шаблон
 13. `AddRoomFields` — Room: Building (default "Church"), Floor (default 1), Color (default "#6B7280")
 14. `AddGoogleCalendarSync` — CalendarEvent: GoogleEventId (nullable string)
 15. `AddDashboardConfig` — User: DashboardConfigJson (text nullable)
+16. `AddPersonActivity` — PersonActivities table (Id, PersonId FK, Type, Content?, AuthorId? FK,
+    OldStatus*/NewStatus* inline fields, CreatedAt)
 
 ## Development Commands
 
@@ -449,6 +454,9 @@ Nginx проксує на контейнер. SSL через Certbot + Let's Enc
 - [x] JwtService.GetMergedPermissions — об'єднує permissions з усіх ролей, додає до JWT + AuthResponse
 - [x] Всі ендпоінти захищені відповідними [RequirePermission("...")] атрибутами
 - [x] POST /admins/me/set-password — без RequirePermission, будь-який юзер може змінити свій пароль
+- [x] PersonActivity feed — GET /people/:id/activity, POST /people/:id/comments
+      Type "comment" = ручний коментар адміна; "status_change" = системна подія при зміні статусу
+      Статус зберігається inline (name+color) щоб не залежати від видалених статусів
 
 ## TODO
 

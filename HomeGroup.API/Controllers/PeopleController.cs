@@ -8,6 +8,7 @@ using HomeGroup.API.Models.Entities;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using PersonActivityEntity = HomeGroup.API.Models.Entities.PersonActivity;
 
 namespace HomeGroup.API.Controllers;
 
@@ -171,6 +172,9 @@ public class PeopleController(AppDbContext db) : ControllerBase
         if (person is null) return NotFound();
 
         var oldGroupId = person.PrimaryGroupId;
+        var oldStatusId = person.PersonStatusId;
+        var oldStatusName = person.PersonStatus?.Name;
+        var oldStatusColor = person.PersonStatus?.Color;
 
         person.Name = request.Name.Trim();
         person.LastName = request.LastName?.Trim();
@@ -212,6 +216,24 @@ public class PeopleController(AppDbContext db) : ControllerBase
         await db.Entry(person).Reference(p => p.OversightUser).LoadAsync();
         await db.Entry(person).Reference(p => p.PersonStatus).LoadAsync();
 
+        if (oldStatusId != request.PersonStatusId)
+        {
+            long.TryParse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value, out var authorId);
+            db.PersonActivities.Add(new PersonActivityEntity
+            {
+                PersonId = id,
+                Type = "status_change",
+                AuthorId = authorId == 0 ? null : authorId,
+                OldStatusId = oldStatusId,
+                OldStatusName = oldStatusName,
+                OldStatusColor = oldStatusColor,
+                NewStatusId = person.PersonStatus?.Id,
+                NewStatusName = person.PersonStatus?.Name,
+                NewStatusColor = person.PersonStatus?.Color,
+            });
+            await db.SaveChangesAsync();
+        }
+
         var updatedStatusDto = person.PersonStatus is null ? null : new PersonStatusDto(person.PersonStatus.Id, person.PersonStatus.Name, person.PersonStatus.Color);
 
         return Ok(new PersonDetailResponse(
@@ -235,6 +257,61 @@ public class PeopleController(AppDbContext db) : ControllerBase
         db.People.Remove(person);
         await db.SaveChangesAsync();
         return NoContent();
+    }
+
+    [HttpGet("{id}/activity")]
+    [RequirePermission("people.view")]
+    public async Task<ActionResult<List<PersonActivityDto>>> GetActivity(long id)
+    {
+        if (!await db.People.AnyAsync(p => p.Id == id)) return NotFound();
+
+        var entries = await db.PersonActivities
+            .Include(a => a.Author)
+            .Where(a => a.PersonId == id)
+            .OrderByDescending(a => a.CreatedAt)
+            .ToListAsync();
+
+        return Ok(entries.Select(a => new PersonActivityDto(
+            a.Id,
+            a.Type,
+            a.Content,
+            a.AuthorId,
+            a.Author is null ? null : $"{a.Author.Name}{(a.Author.LastName is null ? "" : " " + a.Author.LastName)}",
+            a.OldStatusId is null && a.OldStatusName is null ? null : new PersonStatusDto(a.OldStatusId ?? 0, a.OldStatusName ?? "", a.OldStatusColor ?? "#888"),
+            a.NewStatusId is null && a.NewStatusName is null ? null : new PersonStatusDto(a.NewStatusId ?? 0, a.NewStatusName ?? "", a.NewStatusColor ?? "#888"),
+            a.CreatedAt)).ToList());
+    }
+
+    [HttpPost("{id}/comments")]
+    [RequirePermission("people.edit")]
+    public async Task<ActionResult<PersonActivityDto>> AddComment(long id, AddPersonCommentRequest request)
+    {
+        if (!await db.People.AnyAsync(p => p.Id == id)) return NotFound();
+
+        if (string.IsNullOrWhiteSpace(request.Content))
+            return BadRequest(new { message = "Коментар не може бути порожнім" });
+
+        long.TryParse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value, out var authorId);
+
+        var entry = new PersonActivityEntity
+        {
+            PersonId = id,
+            Type = "comment",
+            Content = request.Content.Trim(),
+            AuthorId = authorId == 0 ? null : authorId,
+        };
+        db.PersonActivities.Add(entry);
+        await db.SaveChangesAsync();
+        await db.Entry(entry).Reference(a => a.Author).LoadAsync();
+
+        return Ok(new PersonActivityDto(
+            entry.Id,
+            entry.Type,
+            entry.Content,
+            entry.AuthorId,
+            entry.Author is null ? null : $"{entry.Author.Name}{(entry.Author.LastName is null ? "" : " " + entry.Author.LastName)}",
+            null, null,
+            entry.CreatedAt));
     }
 
     // Custom fields — definitions live on the HomeGroup, values are per-person

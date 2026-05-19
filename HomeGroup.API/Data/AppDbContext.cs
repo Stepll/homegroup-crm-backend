@@ -24,6 +24,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<HomeMeetingPlan> MeetingPlans => Set<HomeMeetingPlan>();
     public DbSet<MeetingPlanBlock> MeetingPlanBlocks => Set<MeetingPlanBlock>();
     public DbSet<PersonStatus> PersonStatuses => Set<PersonStatus>();
+    public DbSet<PersonActivity> PersonActivities => Set<PersonActivity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -204,6 +205,18 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             .WithMany(p => p.Blocks)
             .HasForeignKey(b => b.PlanId)
             .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<PersonActivity>()
+            .HasOne(a => a.Person)
+            .WithMany()
+            .HasForeignKey(a => a.PersonId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<PersonActivity>()
+            .HasOne(a => a.Author)
+            .WithMany()
+            .HasForeignKey(a => a.AuthorId)
+            .OnDelete(DeleteBehavior.SetNull);
 
         // Seed roles
         modelBuilder.Entity<Role>().HasData(
