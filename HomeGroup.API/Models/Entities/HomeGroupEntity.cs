@@ -16,6 +16,7 @@ public class HomeGroupEntity
     public Person? Leader { get; set; }
     public string? TelegramGroupId { get; set; }
     public string? NextMeetingOverrideDate { get; set; }
+    public string? NotifSettingsJson { get; set; }
     public bool IsActive { get; set; } = true;
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 

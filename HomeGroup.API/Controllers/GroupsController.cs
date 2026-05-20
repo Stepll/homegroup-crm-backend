@@ -1149,6 +1149,51 @@ public class GroupsController(AppDbContext db) : ControllerBase
         return Ok();
     }
 
+    private static readonly string[] NotifKeys = ["event_7days", "event_day", "conflict", "conflict_resolved", "attendance_ask"];
+
+    private static Dictionary<string, bool> ParseNotifSettings(string? json)
+    {
+        var defaults = NotifKeys.ToDictionary(k => k, _ => true);
+        if (string.IsNullOrEmpty(json)) return defaults;
+        try
+        {
+            var stored = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, bool>>(json) ?? [];
+            foreach (var k in NotifKeys.Where(k => !stored.ContainsKey(k)))
+                stored[k] = true;
+            return stored;
+        }
+        catch { return defaults; }
+    }
+
+    [HttpGet("{id}/notif-settings")]
+    [RequirePermission("groups.view")]
+    public async Task<IActionResult> GetNotifSettings(long id)
+    {
+        var group = await db.HomeGroups.FirstOrDefaultAsync(g => g.Id == id);
+        if (group is null) return NotFound();
+        var s = ParseNotifSettings(group.NotifSettingsJson);
+        return Ok(new NotifSettingsDto(s["event_7days"], s["event_day"], s["conflict"], s["conflict_resolved"], s["attendance_ask"]));
+    }
+
+    [HttpPut("{id}/notif-settings")]
+    [RequirePermission("groups.manage")]
+    public async Task<IActionResult> UpdateNotifSettings(long id, UpdateNotifSettingsRequest request)
+    {
+        var group = await db.HomeGroups.FirstOrDefaultAsync(g => g.Id == id);
+        if (group is null) return NotFound();
+        var s = new Dictionary<string, bool>
+        {
+            ["event_7days"] = request.EventSevenDays,
+            ["event_day"] = request.EventDay,
+            ["conflict"] = request.Conflict,
+            ["conflict_resolved"] = request.ConflictResolved,
+            ["attendance_ask"] = request.AttendanceAsk,
+        };
+        group.NotifSettingsJson = System.Text.Json.JsonSerializer.Serialize(s);
+        await db.SaveChangesAsync();
+        return Ok(new NotifSettingsDto(s["event_7days"], s["event_day"], s["conflict"], s["conflict_resolved"], s["attendance_ask"]));
+    }
+
     private static async Task SyncGroupCalendarEvent(HomeGroupEntity group, AppDbContext db)
     {
         var existing = await db.CalendarEvents

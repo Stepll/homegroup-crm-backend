@@ -38,3 +38,17 @@ public record GroupMemberResponse(
     long? UserId,
     MemberRoleTagDto? RoleTag,
     string? OversightUserName = null);
+
+public record NotifSettingsDto(
+    bool EventSevenDays,
+    bool EventDay,
+    bool Conflict,
+    bool ConflictResolved,
+    bool AttendanceAsk);
+
+public record UpdateNotifSettingsRequest(
+    bool EventSevenDays,
+    bool EventDay,
+    bool Conflict,
+    bool ConflictResolved,
+    bool AttendanceAsk);
