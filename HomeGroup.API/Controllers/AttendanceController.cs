@@ -214,8 +214,9 @@ public class AttendanceController(AppDbContext db) : ControllerBase
     public async Task<ActionResult<AttendanceDotsResponse>> GetDots(
         [FromQuery] long groupId, [FromQuery] int limit = 5)
     {
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
         var dates = await db.Attendances
-            .Where(a => a.HomeGroupId == groupId)
+            .Where(a => a.HomeGroupId == groupId && a.MeetingDate <= today)
             .Select(a => a.MeetingDate)
             .Distinct()
             .OrderByDescending(d => d)
