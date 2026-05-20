@@ -50,7 +50,7 @@ HomeGroup.API/
       PersonStatus.cs            — Id, Name, Color, CreatedAt
       HomeGroupEntity.cs         — Id, Name, Description, Color, MeetingDay/Time,
                                    Location, LeaderId, TelegramGroupId,
-                                   NextMeetingOverrideDate, IsActive
+                                   NextMeetingOverrideDate, NotifSettingsJson?, IsActive
       HomeGroupMember.cs         — HomeGroupId, PersonId, Role (join table)
       UserHomeGroup.cs           — UserId, HomeGroupId (join table)
       UserRole.cs                — UserId, RoleId (join table)
@@ -76,7 +76,8 @@ HomeGroup.API/
       Groups/GroupDtos.cs        — GroupResponse (+TelegramGroupId), CreateGroupRequest,
                                    UpdateGroupRequest (+TelegramGroupId),
                                    SetNextMeetingRequest(Date, OldDate?),
-                                   GroupCustomFieldDto, CreateGroupCustomFieldRequest
+                                   GroupCustomFieldDto, CreateGroupCustomFieldRequest,
+                                   NotifSettingsDto, UpdateNotifSettingsRequest
       Groups/GroupCabinetDto.cs  — GroupCabinetResponse (+HasPlanForNextMeeting),
                                    CabinetGroupInfo (+TelegramGroupId),
                                    CabinetOrgMember (+CabinetRoleTag?),
@@ -135,6 +136,13 @@ Dockerfile
 - `PlanTemplate` — глобальний шаблон плану (не прив'язаний до групи)
 - `HomeMeetingPlan` — план конкретної зустрічі (HomeGroupId + MeetingDate = унікальний)
 - Унікальний індекс на `(HomeGroupId, MeetingDate)` для HomeMeetingPlan
+
+### Notification Settings
+`HomeGroupEntity.NotifSettingsJson` (string?, text) — JSON-об'єкт з налаштуваннями сповіщень Telegram:
+- Ключі: `event_7days`, `event_day`, `conflict`, `conflict_resolved`, `attendance_ask`
+- Дефолт для всіх: `true`
+- API повертає camelCase: `eventSevenDays`, `eventDay`, `conflict`, `conflictResolved`, `attendanceAsk`
+- Бот читає налаштування через API (не локальний JSON-файл) і перевіряє перед кожним типом сповіщення
 
 ## API Endpoints
 
@@ -215,6 +223,10 @@ DELETE /api/v1/groups/:id/plans/date/:date
 
 PUT    /api/v1/groups/:id/next-meeting         — { date?, oldDate? } → override + опційно переміщає план
 PUT    /api/v1/groups/:id/skip-meeting         → обчислює наступний день тижня після поточного next-meeting
+
+GET    /api/v1/groups/:id/notif-settings       → NotifSettingsDto [page.cabinet]
+PUT    /api/v1/groups/:id/notif-settings       — { eventSevenDays, eventDay, conflict,
+                                                   conflictResolved, attendanceAsk } [page.cabinet]
 ```
 
 ### Roles
@@ -234,6 +246,8 @@ POST /api/v1/attendance             — { homeGroupId, meetingDate,
                                         entries: [{personId?, userId?, wasPresent}] }
 GET  /api/v1/attendance/meta        — ?groupId=&date= → { guestCount, guestInfo }
 POST /api/v1/attendance/meta        — { homeGroupId, meetingDate, guestCount, guestInfo? }
+GET  /api/v1/attendance/dots        — ?groupId=&limit=5 → AttendanceDotsResponse
+                                      фільтрує MeetingDate <= today (не включає майбутні зустрічі)
 ```
 
 ### Calendar
@@ -363,6 +377,7 @@ Recurring HomeGroup events є "ghost" — прозорі події-шаблон
 15. `AddDashboardConfig` — User: DashboardConfigJson (text nullable)
 16. `AddPersonActivity` — PersonActivities table (Id, PersonId FK, Type, Content?, AuthorId? FK,
     OldStatus*/NewStatus* inline fields, CreatedAt)
+17. `AddGroupNotifSettings` — HomeGroupEntity.NotifSettingsJson (text nullable)
 
 ## Development Commands
 
@@ -457,6 +472,11 @@ Nginx проксує на контейнер. SSL через Certbot + Let's Enc
 - [x] PersonActivity feed — GET /people/:id/activity, POST /people/:id/comments
       Type "comment" = ручний коментар адміна; "status_change" = системна подія при зміні статусу
       Статус зберігається inline (name+color) щоб не залежати від видалених статусів
+- [x] GET /attendance/dots фільтрує MeetingDate <= today — майбутні зустрічі не потрапляють в точки
+- [x] GET/PUT /groups/:id/notif-settings — налаштування Telegram-сповіщень per group [page.cabinet]
+      Зберігається в HomeGroupEntity.NotifSettingsJson (text, JSON)
+      Ключі: event_7days, event_day, conflict, conflict_resolved, attendance_ask (дефолт: всі true)
+      Бот читає через API (не локальний файл), планувальник перевіряє перед кожним сповіщенням
 
 ## TODO
 
