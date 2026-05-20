@@ -1166,7 +1166,7 @@ public class GroupsController(AppDbContext db) : ControllerBase
     }
 
     [HttpGet("{id}/notif-settings")]
-    [RequirePermission("groups.view")]
+    [RequirePermission("page.cabinet")]
     public async Task<IActionResult> GetNotifSettings(long id)
     {
         var group = await db.HomeGroups.FirstOrDefaultAsync(g => g.Id == id);
@@ -1176,7 +1176,7 @@ public class GroupsController(AppDbContext db) : ControllerBase
     }
 
     [HttpPut("{id}/notif-settings")]
-    [RequirePermission("groups.manage")]
+    [RequirePermission("page.cabinet")]
     public async Task<IActionResult> UpdateNotifSettings(long id, UpdateNotifSettingsRequest request)
     {
         var group = await db.HomeGroups.FirstOrDefaultAsync(g => g.Id == id);
