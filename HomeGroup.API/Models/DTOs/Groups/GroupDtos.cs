@@ -6,7 +6,7 @@ public record CreateGroupRequest(string Name, string? Description, string Color,
 
 public record UpdateGroupRequest(string Name, string? Description, string Color, string? MeetingDay, string? MeetingTime, string? Location, long? LeaderId, bool IsActive, string? TelegramGroupId = null, string? MeetingEndTime = null);
 
-public record GroupResponse(long Id, string Name, string? Description, string Color, string? MeetingDay, string? MeetingTime, string? Location, long? LeaderId, string? LeaderName, bool IsActive, int MemberCount, string? TelegramGroupId = null, string? MeetingEndTime = null);
+public record GroupResponse(long Id, string Name, string? Description, string Color, string? MeetingDay, string? MeetingTime, string? Location, long? LeaderId, string? LeaderName, bool IsActive, int MemberCount, string? TelegramGroupId = null, string? MeetingEndTime = null, string? NextMeetingDate = null);
 
 public record BookRoomRequest(string Date, long? RoomId, bool AutoBook);
 

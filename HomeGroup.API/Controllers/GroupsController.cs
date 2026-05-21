@@ -19,15 +19,27 @@ public class GroupsController(AppDbContext db) : ControllerBase
     [HttpGet]
     public async Task<ActionResult<List<GroupResponse>>> GetAll()
     {
-        var groups = await db.HomeGroups
+        var raw = await db.HomeGroups
             .Include(g => g.Leader)
             .Include(g => g.Members)
             .OrderBy(g => g.Name)
-            .Select(g => new GroupResponse(
-                g.Id, g.Name, g.Description, g.Color, g.MeetingDay, g.MeetingTime, g.Location,
-                g.LeaderId, g.Leader != null ? g.Leader.Name : null,
-                g.IsActive, g.Members.Count, g.TelegramGroupId, g.MeetingEndTime))
             .ToListAsync();
+
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var nowTime = TimeOnly.FromDateTime(DateTime.UtcNow);
+
+        var groups = raw.Select(g =>
+        {
+            var computed = ComputeNextMeeting(g.MeetingDay, g.MeetingTime, today, nowTime);
+            var nextMeetingDate = g.NextMeetingOverrideDate is not null
+                && DateOnly.TryParse(g.NextMeetingOverrideDate, out var ov) && ov >= today
+                ? g.NextMeetingOverrideDate
+                : computed?.ToString("yyyy-MM-dd");
+            return new GroupResponse(
+                g.Id, g.Name, g.Description, g.Color, g.MeetingDay, g.MeetingTime, g.Location,
+                g.LeaderId, g.Leader?.Name, g.IsActive, g.Members.Count, g.TelegramGroupId, g.MeetingEndTime,
+                nextMeetingDate);
+        }).ToList();
 
         return Ok(groups);
     }
@@ -772,7 +784,16 @@ public class GroupsController(AppDbContext db) : ControllerBase
             }
         }
 
-        var prevScheduled = ComputeLastMeeting(group.MeetingDay, group.MeetingTime, today, nowTime);
+        var schedPrev = ComputeLastMeeting(group.MeetingDay, group.MeetingTime, today, nowTime);
+        DateOnly? prevScheduled = schedPrev;
+        if (group.NextMeetingOverrideDate is not null
+            && DateOnly.TryParse(group.NextMeetingOverrideDate, out var overridePrev))
+        {
+            var overridePassed = overridePrev < today
+                || (overridePrev == today && (!TimeOnly.TryParse(group.MeetingTime, out var mt) || nowTime >= mt));
+            if (overridePassed && (schedPrev is null || overridePrev >= schedPrev))
+                prevScheduled = overridePrev;
+        }
 
         return Ok(new GroupCabinetResponse(
             new CabinetGroupInfo(group.Id, group.Name, group.Color, group.MeetingDay, group.MeetingTime, group.Location, group.TelegramGroupId, group.MeetingEndTime, group.AutoBookRoomId),
