@@ -53,8 +53,8 @@ public record UpdateNotifSettingsRequest(
     bool ConflictResolved,
     bool AttendanceAsk);
 
-public record GroupNeedDto(long Id, string SubjectName, string Description, string Status, DateTime CreatedAt);
+public record GroupNeedDto(long Id, string SubjectName, string Description, string Status, DateTime CreatedAt, long? PersonId = null, long? UserId = null);
 
-public record CreateGroupNeedRequest(string SubjectName, string Description);
+public record CreateGroupNeedRequest(string SubjectName, string Description, long? PersonId = null, long? UserId = null);
 
-public record UpdateGroupNeedRequest(string SubjectName, string Description, string Status);
+public record UpdateGroupNeedRequest(string SubjectName, string Description, string Status, long? PersonId = null, long? UserId = null);

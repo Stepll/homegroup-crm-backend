@@ -510,7 +510,7 @@ public class GroupsController(AppDbContext db) : ControllerBase
         var needs = await db.GroupNeeds
             .Where(n => n.HomeGroupId == id)
             .OrderByDescending(n => n.CreatedAt)
-            .Select(n => new GroupNeedDto(n.Id, n.SubjectName, n.Description, n.Status, n.CreatedAt))
+            .Select(n => new GroupNeedDto(n.Id, n.SubjectName, n.Description, n.Status, n.CreatedAt, n.PersonId, n.UserId))
             .ToListAsync();
         return Ok(needs);
     }
@@ -525,10 +525,12 @@ public class GroupsController(AppDbContext db) : ControllerBase
             SubjectName = request.SubjectName,
             Description = request.Description,
             Status = "active",
+            PersonId = request.PersonId,
+            UserId = request.UserId,
         };
         db.GroupNeeds.Add(need);
         await db.SaveChangesAsync();
-        return Ok(new GroupNeedDto(need.Id, need.SubjectName, need.Description, need.Status, need.CreatedAt));
+        return Ok(new GroupNeedDto(need.Id, need.SubjectName, need.Description, need.Status, need.CreatedAt, need.PersonId, need.UserId));
     }
 
     [HttpPut("{id}/needs/{needId}")]
@@ -540,8 +542,10 @@ public class GroupsController(AppDbContext db) : ControllerBase
         need.SubjectName = request.SubjectName;
         need.Description = request.Description;
         need.Status = request.Status;
+        need.PersonId = request.PersonId;
+        need.UserId = request.UserId;
         await db.SaveChangesAsync();
-        return Ok(new GroupNeedDto(need.Id, need.SubjectName, need.Description, need.Status, need.CreatedAt));
+        return Ok(new GroupNeedDto(need.Id, need.SubjectName, need.Description, need.Status, need.CreatedAt, need.PersonId, need.UserId));
     }
 
     [HttpDelete("{id}/needs/{needId}")]
