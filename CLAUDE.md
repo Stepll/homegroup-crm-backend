@@ -18,7 +18,7 @@ HomeGroup.API/
   Controllers/
     AuthController.cs            — /api/v1/auth (login)
     GroupsController.cs          — /api/v1/groups (CRUD + members + custom fields +
-                                    cabinet + events + plans + stats + stats/all + next-meeting)
+                                    cabinet + events + plans + stats + stats/all + next-meeting + needs)
     PeopleController.cs          — /api/v1/people (CRUD + custom field values)
     AdminsController.cs          — /api/v1/admins (CRUD + profile + me/set-password (no perm) +
                                     :id/set-password (settings.admins) + me/dashboard GET/PUT)
@@ -62,6 +62,9 @@ HomeGroup.API/
       HomeGroupCustomField.cs    — Id, HomeGroupId, Name, CreatedAt
       PersonCustomFieldValue.cs  — Id, PersonId, FieldId, Value
       GroupEvent.cs              — Id, HomeGroupId, Name, Month, Day, Year?, CreatedAt
+      GroupNeed.cs               — Id, HomeGroupId, SubjectName, Description,
+                                   Status (active|answered|irrelevant),
+                                   PersonId? (FK → Person), UserId? (FK → User), CreatedAt
       Room.cs                    — Id, Name
       CalendarEvent.cs           — Id, Title, Description?, Location?, RoomId?,
                                    Type (Recurring|Global|HomeGroup|Google), HomeGroupId?,
@@ -77,7 +80,10 @@ HomeGroup.API/
                                    UpdateGroupRequest (+TelegramGroupId),
                                    SetNextMeetingRequest(Date, OldDate?),
                                    GroupCustomFieldDto, CreateGroupCustomFieldRequest,
-                                   NotifSettingsDto, UpdateNotifSettingsRequest
+                                   NotifSettingsDto, UpdateNotifSettingsRequest,
+                                   GroupNeedDto(Id, SubjectName, Description, Status, CreatedAt, PersonId?, UserId?),
+                                   CreateGroupNeedRequest(SubjectName, Description, PersonId?, UserId?),
+                                   UpdateGroupNeedRequest(SubjectName, Description, Status, PersonId?, UserId?)
       Groups/GroupCabinetDto.cs  — GroupCabinetResponse (+HasPlanForNextMeeting),
                                    CabinetGroupInfo (+TelegramGroupId),
                                    CabinetOrgMember (+CabinetRoleTag?),
@@ -136,6 +142,15 @@ Dockerfile
 - `PlanTemplate` — глобальний шаблон плану (не прив'язаний до групи)
 - `HomeMeetingPlan` — план конкретної зустрічі (HomeGroupId + MeetingDate = унікальний)
 - Унікальний індекс на `(HomeGroupId, MeetingDate)` для HomeMeetingPlan
+
+### Group Needs
+`GroupNeed` — потреби/молитовні запити прив'язані до групи:
+- `SubjectName` — ім'я людини (заголовок картки, вільний текст або заповнюється з вибраного члена)
+- `Description` — текст потреби
+- `Status` — `active` (активна) | `answered` (отримана відповідь) | `irrelevant` (не актуальна)
+- `PersonId?` — FK на Person (опціонально, при виборі члена групи з People)
+- `UserId?` — FK на User (опціонально, при виборі адміна з групи)
+- При наявності PersonId/UserId — ім'я на картці стає клікабельним посиланням на профіль
 
 ### Notification Settings
 `HomeGroupEntity.NotifSettingsJson` (string?, text) — JSON-об'єкт з налаштуваннями сповіщень Telegram:
@@ -229,8 +244,8 @@ PUT    /api/v1/groups/:id/notif-settings       — { eventSevenDays, eventDay, c
                                                    conflictResolved, attendanceAsk } [page.cabinet]
 
 GET    /api/v1/groups/:id/needs                → GroupNeedDto[] [page.cabinet]
-POST   /api/v1/groups/:id/needs                — { subjectName, description } [groups.events.manage]
-PUT    /api/v1/groups/:id/needs/:needId        — { subjectName, description, status } [groups.events.manage]
+POST   /api/v1/groups/:id/needs                — { subjectName, description, personId?, userId? } [groups.events.manage]
+PUT    /api/v1/groups/:id/needs/:needId        — { subjectName, description, status, personId?, userId? } [groups.events.manage]
 DELETE /api/v1/groups/:id/needs/:needId        [groups.events.manage]
 ```
 
@@ -383,6 +398,8 @@ Recurring HomeGroup events є "ghost" — прозорі події-шаблон
 16. `AddPersonActivity` — PersonActivities table (Id, PersonId FK, Type, Content?, AuthorId? FK,
     OldStatus*/NewStatus* inline fields, CreatedAt)
 17. `AddGroupNotifSettings` — HomeGroupEntity.NotifSettingsJson (text nullable)
+18. `AddGroupNeeds` — GroupNeeds table (Id, HomeGroupId FK, SubjectName, Description, Status, CreatedAt)
+19. `AddGroupNeedPersonLink` — GroupNeed: PersonId? (FK → People), UserId? (FK → Users)
 
 ## Development Commands
 
@@ -483,8 +500,12 @@ Nginx проксує на контейнер. SSL через Certbot + Let's Enc
       Ключі: event_7days, event_day, conflict, conflict_resolved, attendance_ask (дефолт: всі true)
       Бот читає через API (не локальний файл), планувальник перевіряє перед кожним сповіщенням
 - [x] GET/POST/PUT/DELETE /groups/:id/needs — потреби групи [page.cabinet / groups.events.manage]
-      GroupNeed: SubjectName (title), Description, Status (active|answered|irrelevant)
-      Блок у кабінеті домашки: статус-тег з dropdown, олівчик і урна
+      GroupNeed: SubjectName, Description, Status (active|answered|irrelevant), PersonId?, UserId?
+      Блок у кабінеті: статус-тег з dropdown, олівчик і урна
+      PersonId/UserId — опціональне прив'язання до Person або User:
+        Mobile: кнопка "З групи" → picker-popup зі списком членів + пошук
+        Desktop: antd Select з showSearch, lazy-load при відкритті модалки
+        Якщо прив'язано — ім'я на картці стає посиланням → /people/:id або /admins/:id
 
 ## TODO
 
