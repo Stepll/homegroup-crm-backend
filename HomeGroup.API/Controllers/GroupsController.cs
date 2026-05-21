@@ -74,7 +74,8 @@ public class GroupsController(AppDbContext db) : ControllerBase
                 m.Person.PrimaryGroupId, m.Person.PrimaryGroup != null ? m.Person.PrimaryGroup.Name : null,
                 m.Person.PrimaryGroup != null ? m.Person.PrimaryGroup.Color : null,
                 m.Person.CreatedAt, false, null, null,
-                m.Person.OversightUser != null ? m.Person.OversightUser.Name + (m.Person.OversightUser.LastName != null ? " " + m.Person.OversightUser.LastName : "") : null))
+                m.Person.OversightUser != null ? m.Person.OversightUser.Name + (m.Person.OversightUser.LastName != null ? " " + m.Person.OversightUser.LastName : "") : null,
+                m.JoinedAt))
             .ToListAsync();
 
         var adminMembers = await db.Users
@@ -85,15 +86,21 @@ public class GroupsController(AppDbContext db) : ControllerBase
             .OrderBy(u => u.Name)
             .ToListAsync();
 
+        var adminUserIds = adminMembers.Select(u => u.Id).ToList();
+        var adminJoinDates = await db.UserHomeGroups
+            .Where(uhg => uhg.HomeGroupId == id && adminUserIds.Contains(uhg.UserId))
+            .ToDictionaryAsync(uhg => uhg.UserId, uhg => (DateTime?)uhg.AssignedAt);
+
         var adminResponses = adminMembers.Select(u =>
         {
             var primaryRole = u.UserRoles.Select(ur => ur.Role).FirstOrDefault();
             var roleTag = primaryRole is null ? null : new MemberRoleTagDto(primaryRole.Name, primaryRole.Color);
             var status = u.PersonStatus is null ? null : new PersonStatusDto(u.PersonStatus.Id, u.PersonStatus.Name, u.PersonStatus.Color);
+            adminJoinDates.TryGetValue(u.Id, out var joinedAt);
             return new GroupMemberResponse(
                 u.Id, u.Name, u.LastName, u.Phone, u.Email, u.Notes,
                 status, u.PrimaryGroupId, u.PrimaryGroup?.Name, u.PrimaryGroup?.Color,
-                u.CreatedAt, true, u.Id, roleTag);
+                u.CreatedAt, true, u.Id, roleTag, null, joinedAt);
         }).ToList();
 
         var all = personMembers.Concat(adminResponses).OrderBy(m => m.Name).ToList();

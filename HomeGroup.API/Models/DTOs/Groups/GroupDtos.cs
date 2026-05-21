@@ -37,7 +37,8 @@ public record GroupMemberResponse(
     bool IsAdmin,
     long? UserId,
     MemberRoleTagDto? RoleTag,
-    string? OversightUserName = null);
+    string? OversightUserName = null,
+    DateTime? JoinedAt = null);
 
 public record NotifSettingsDto(
     bool EventSevenDays,
