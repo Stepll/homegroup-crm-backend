@@ -501,6 +501,60 @@ public class GroupsController(AppDbContext db) : ControllerBase
         return NoContent();
     }
 
+    // ── Needs ────────────────────────────────────────────────────────────────────
+
+    [HttpGet("{id}/needs")]
+    [RequirePermission("page.cabinet")]
+    public async Task<ActionResult<List<GroupNeedDto>>> GetNeeds(long id)
+    {
+        var needs = await db.GroupNeeds
+            .Where(n => n.HomeGroupId == id)
+            .OrderByDescending(n => n.CreatedAt)
+            .Select(n => new GroupNeedDto(n.Id, n.SubjectName, n.Description, n.Status, n.CreatedAt))
+            .ToListAsync();
+        return Ok(needs);
+    }
+
+    [HttpPost("{id}/needs")]
+    [RequirePermission("groups.events.manage")]
+    public async Task<ActionResult<GroupNeedDto>> AddNeed(long id, CreateGroupNeedRequest request)
+    {
+        var need = new GroupNeed
+        {
+            HomeGroupId = id,
+            SubjectName = request.SubjectName,
+            Description = request.Description,
+            Status = "active",
+        };
+        db.GroupNeeds.Add(need);
+        await db.SaveChangesAsync();
+        return Ok(new GroupNeedDto(need.Id, need.SubjectName, need.Description, need.Status, need.CreatedAt));
+    }
+
+    [HttpPut("{id}/needs/{needId}")]
+    [RequirePermission("groups.events.manage")]
+    public async Task<ActionResult<GroupNeedDto>> UpdateNeed(long id, long needId, UpdateGroupNeedRequest request)
+    {
+        var need = await db.GroupNeeds.FirstOrDefaultAsync(n => n.Id == needId && n.HomeGroupId == id);
+        if (need is null) return NotFound();
+        need.SubjectName = request.SubjectName;
+        need.Description = request.Description;
+        need.Status = request.Status;
+        await db.SaveChangesAsync();
+        return Ok(new GroupNeedDto(need.Id, need.SubjectName, need.Description, need.Status, need.CreatedAt));
+    }
+
+    [HttpDelete("{id}/needs/{needId}")]
+    [RequirePermission("groups.events.manage")]
+    public async Task<IActionResult> DeleteNeed(long id, long needId)
+    {
+        var need = await db.GroupNeeds.FirstOrDefaultAsync(n => n.Id == needId && n.HomeGroupId == id);
+        if (need is null) return NotFound();
+        db.GroupNeeds.Remove(need);
+        await db.SaveChangesAsync();
+        return NoContent();
+    }
+
     [HttpGet("{id}/cabinet")]
     [RequirePermission("page.cabinet")]
     public async Task<ActionResult<GroupCabinetResponse>> GetCabinet(long id)

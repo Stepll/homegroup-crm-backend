@@ -227,6 +227,11 @@ PUT    /api/v1/groups/:id/skip-meeting         → обчислює наступ
 GET    /api/v1/groups/:id/notif-settings       → NotifSettingsDto [page.cabinet]
 PUT    /api/v1/groups/:id/notif-settings       — { eventSevenDays, eventDay, conflict,
                                                    conflictResolved, attendanceAsk } [page.cabinet]
+
+GET    /api/v1/groups/:id/needs                → GroupNeedDto[] [page.cabinet]
+POST   /api/v1/groups/:id/needs                — { subjectName, description } [groups.events.manage]
+PUT    /api/v1/groups/:id/needs/:needId        — { subjectName, description, status } [groups.events.manage]
+DELETE /api/v1/groups/:id/needs/:needId        [groups.events.manage]
 ```
 
 ### Roles
@@ -477,6 +482,9 @@ Nginx проксує на контейнер. SSL через Certbot + Let's Enc
       Зберігається в HomeGroupEntity.NotifSettingsJson (text, JSON)
       Ключі: event_7days, event_day, conflict, conflict_resolved, attendance_ask (дефолт: всі true)
       Бот читає через API (не локальний файл), планувальник перевіряє перед кожним сповіщенням
+- [x] GET/POST/PUT/DELETE /groups/:id/needs — потреби групи [page.cabinet / groups.events.manage]
+      GroupNeed: SubjectName (title), Description, Status (active|answered|irrelevant)
+      Блок у кабінеті домашки: статус-тег з dropdown, олівчик і урна
 
 ## TODO
 

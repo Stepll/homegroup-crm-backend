@@ -26,6 +26,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<PersonStatus> PersonStatuses => Set<PersonStatus>();
     public DbSet<PersonActivity> PersonActivities => Set<PersonActivity>();
     public DbSet<AdminTask> AdminTasks => Set<AdminTask>();
+    public DbSet<GroupNeed> GroupNeeds => Set<GroupNeed>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
