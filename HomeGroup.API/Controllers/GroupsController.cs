@@ -974,19 +974,82 @@ public class GroupsController(AppDbContext db) : ControllerBase
                 plan.MeetingDate = request.Date;
             }
 
-            // Move non-recurring CalendarEvent booking (room reservation)
-            var oldBooking = await db.CalendarEvents
+            // Compute start/end time for the rescheduled meeting
+            TimeOnly? newStartTime = null;
+            TimeOnly? newEndTime = null;
+
+            if (!string.IsNullOrEmpty(request.Time) && TimeOnly.TryParse(request.Time, out var reqTime))
+                newStartTime = reqTime;
+            else if (!string.IsNullOrEmpty(group.MeetingTime) && TimeOnly.TryParse(group.MeetingTime, out var grpTime))
+                newStartTime = grpTime;
+
+            if (newStartTime.HasValue
+                && !string.IsNullOrEmpty(group.MeetingTime) && TimeOnly.TryParse(group.MeetingTime, out var origStart)
+                && !string.IsNullOrEmpty(group.MeetingEndTime) && TimeOnly.TryParse(group.MeetingEndTime, out var origEnd))
+            {
+                newEndTime = newStartTime.Value.Add(origEnd - origStart);
+            }
+
+            var oldDateEvent = await db.CalendarEvents
                 .FirstOrDefaultAsync(e => e.Type == CalendarEventType.HomeGroup
                     && !e.IsRecurring && e.HomeGroupId == id && e.Date == oldDateOnly);
-            if (oldBooking is not null)
+
+            var newDateEvent = await db.CalendarEvents
+                .FirstOrDefaultAsync(e => e.Type == CalendarEventType.HomeGroup
+                    && !e.IsRecurring && e.HomeGroupId == id && e.Date == newDateOnly);
+
+            // Transfer room and remove old event (unless it's already a suppression marker)
+            long? transferredRoomId = null;
+            if (oldDateEvent is not null && oldDateEvent.IsHomeGroupMeeting != false)
             {
-                var newBooking = await db.CalendarEvents
-                    .FirstOrDefaultAsync(e => e.Type == CalendarEventType.HomeGroup
-                        && !e.IsRecurring && e.HomeGroupId == id && e.Date == newDateOnly);
-                if (newBooking is null)
-                    oldBooking.Date = newDateOnly;
-                else
-                    db.CalendarEvents.Remove(oldBooking);
+                transferredRoomId = oldDateEvent.RoomId;
+                db.CalendarEvents.Remove(oldDateEvent);
+                db.CalendarEvents.Add(new CalendarEvent
+                {
+                    Type = CalendarEventType.HomeGroup,
+                    HomeGroupId = id,
+                    IsRecurring = false,
+                    Date = oldDateOnly,
+                    IsHomeGroupMeeting = false,
+                    Title = group.Name,
+                });
+            }
+            else if (oldDateEvent is null)
+            {
+                db.CalendarEvents.Add(new CalendarEvent
+                {
+                    Type = CalendarEventType.HomeGroup,
+                    HomeGroupId = id,
+                    IsRecurring = false,
+                    Date = oldDateOnly,
+                    IsHomeGroupMeeting = false,
+                    Title = group.Name,
+                });
+            }
+
+            // Upsert real meeting event on new date
+            if (newDateEvent is not null)
+            {
+                newDateEvent.IsHomeGroupMeeting = true;
+                if (newStartTime.HasValue) newDateEvent.StartTime = newStartTime;
+                if (newEndTime.HasValue) newDateEvent.EndTime = newEndTime;
+                if (transferredRoomId.HasValue && !newDateEvent.RoomId.HasValue)
+                    newDateEvent.RoomId = transferredRoomId;
+            }
+            else
+            {
+                db.CalendarEvents.Add(new CalendarEvent
+                {
+                    Type = CalendarEventType.HomeGroup,
+                    HomeGroupId = id,
+                    IsRecurring = false,
+                    Date = newDateOnly,
+                    IsHomeGroupMeeting = true,
+                    Title = group.Name,
+                    StartTime = newStartTime,
+                    EndTime = newEndTime,
+                    RoomId = transferredRoomId,
+                });
             }
         }
 
