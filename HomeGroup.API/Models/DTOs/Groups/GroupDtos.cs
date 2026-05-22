@@ -38,7 +38,9 @@ public record GroupMemberResponse(
     long? UserId,
     MemberRoleTagDto? RoleTag,
     string? OversightUserName = null,
-    DateTime? JoinedAt = null);
+    DateTime? JoinedAt = null,
+    bool IsFormer = false,
+    DateTime? LeftAt = null);
 
 public record NotifSettingsDto(
     bool EventSevenDays,
@@ -61,5 +63,21 @@ public record CreateGroupNeedRequest(string SubjectName, string Description, lon
 public record UpdateGroupNeedRequest(string SubjectName, string Description, string Status, long? PersonId = null, long? UserId = null);
 
 public record SetMemberJoinedAtRequest(long? PersonId, long? UserId, DateTime JoinedAt);
+public record SetMemberLeftAtRequest(long? PersonId, long? UserId, DateTime LeftAt);
+
+public record TransferMemberRequest(long? PersonId, long? UserId, long ToGroupId);
 
 public record GroupMemberHistoryDto(long Id, long? PersonId, string? PersonName, long? UserId, string? UserName, long HomeGroupId, string HomeGroupName, DateTime JoinedAt, DateTime? LeftAt);
+
+public record TimelineEventDto(
+    string Type,
+    DateTime Date,
+    long? GroupId = null,
+    string? GroupName = null,
+    string? GroupColor = null,
+    string? StatusName = null,
+    string? StatusColor = null,
+    string? OldStatusName = null,
+    string? OldStatusColor = null,
+    string? OversightName = null,
+    string? OldOversightName = null);

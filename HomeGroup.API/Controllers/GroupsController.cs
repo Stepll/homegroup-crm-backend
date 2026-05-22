@@ -62,22 +62,24 @@ public class GroupsController(AppDbContext db) : ControllerBase
     [HttpGet("{id}/members")]
     public async Task<ActionResult<List<GroupMemberResponse>>> GetMembers(long id)
     {
-        var personMembers = await db.HomeGroupMembers
+        // Active person members
+        var personMemberEntities = await db.HomeGroupMembers
             .Where(m => m.HomeGroupId == id)
             .Include(m => m.Person).ThenInclude(p => p.PersonStatus)
             .Include(m => m.Person).ThenInclude(p => p.PrimaryGroup)
             .Include(m => m.Person).ThenInclude(p => p.OversightUser)
             .OrderBy(m => m.Person.Name)
-            .Select(m => new GroupMemberResponse(
-                m.Person.Id, m.Person.Name, m.Person.LastName, m.Person.Phone, m.Person.Email, m.Person.Notes,
-                m.Person.PersonStatus != null ? new PersonStatusDto(m.Person.PersonStatus.Id, m.Person.PersonStatus.Name, m.Person.PersonStatus.Color) : null,
-                m.Person.PrimaryGroupId, m.Person.PrimaryGroup != null ? m.Person.PrimaryGroup.Name : null,
-                m.Person.PrimaryGroup != null ? m.Person.PrimaryGroup.Color : null,
-                m.Person.CreatedAt, false, null, null,
-                m.Person.OversightUser != null ? m.Person.OversightUser.Name + (m.Person.OversightUser.LastName != null ? " " + m.Person.OversightUser.LastName : "") : null,
-                m.JoinedAt))
             .ToListAsync();
 
+        var personMembers = personMemberEntities.Select(m => new GroupMemberResponse(
+            m.Person.Id, m.Person.Name, m.Person.LastName, m.Person.Phone, m.Person.Email, m.Person.Notes,
+            m.Person.PersonStatus != null ? new PersonStatusDto(m.Person.PersonStatus.Id, m.Person.PersonStatus.Name, m.Person.PersonStatus.Color) : null,
+            m.Person.PrimaryGroupId, m.Person.PrimaryGroup?.Name, m.Person.PrimaryGroup?.Color,
+            m.Person.CreatedAt, false, null, null,
+            m.Person.OversightUser != null ? m.Person.OversightUser.Name + (m.Person.OversightUser.LastName != null ? " " + m.Person.OversightUser.LastName : "") : null,
+            m.JoinedAt)).ToList();
+
+        // Active admin members
         var adminMembers = await db.Users
             .Where(u => u.PrimaryGroupId == id && u.Id != 0)
             .Include(u => u.UserRoles).ThenInclude(ur => ur.Role)
@@ -103,7 +105,75 @@ public class GroupsController(AppDbContext db) : ControllerBase
                 u.CreatedAt, true, u.Id, roleTag, null, joinedAt);
         }).ToList();
 
-        var all = personMembers.Concat(adminResponses).OrderBy(m => m.Name).ToList();
+        // Past members from history
+        var activePersonIds = personMembers.Select(m => (long?)m.Id).ToHashSet();
+        var activeUserIds = adminResponses.Select(m => m.UserId).ToHashSet();
+
+        var pastHistories = await db.GroupMemberHistories
+            .Where(h => h.HomeGroupId == id && h.LeftAt != null)
+            .OrderByDescending(h => h.LeftAt)
+            .ToListAsync();
+
+        // Deduplicate: latest LeftAt per person/user, skip if currently active
+        var seenPersonIds = new HashSet<long>();
+        var seenUserIds = new HashSet<long>();
+        var formerPersonIds = new List<(long PersonId, DateTime JoinedAt, DateTime LeftAt)>();
+        var formerUserIds = new List<(long UserId, DateTime JoinedAt, DateTime LeftAt)>();
+
+        foreach (var h in pastHistories)
+        {
+            if (h.PersonId.HasValue && !activePersonIds.Contains(h.PersonId) && seenPersonIds.Add(h.PersonId.Value))
+                formerPersonIds.Add((h.PersonId.Value, h.JoinedAt, h.LeftAt!.Value));
+            if (h.UserId.HasValue && !activeUserIds.Contains(h.UserId) && seenUserIds.Add(h.UserId.Value))
+                formerUserIds.Add((h.UserId.Value, h.JoinedAt, h.LeftAt!.Value));
+        }
+
+        var formerPersonMembers = new List<GroupMemberResponse>();
+        if (formerPersonIds.Count > 0)
+        {
+            var pids = formerPersonIds.Select(x => x.PersonId).ToList();
+            var persons = await db.People.Where(p => pids.Contains(p.Id))
+                .Include(p => p.PersonStatus).Include(p => p.PrimaryGroup).Include(p => p.OversightUser)
+                .ToListAsync();
+            foreach (var (pid, joinedAt, leftAt) in formerPersonIds)
+            {
+                var p = persons.FirstOrDefault(x => x.Id == pid);
+                if (p is null) continue;
+                var status = p.PersonStatus is null ? null : new PersonStatusDto(p.PersonStatus.Id, p.PersonStatus.Name, p.PersonStatus.Color);
+                formerPersonMembers.Add(new GroupMemberResponse(
+                    p.Id, p.Name, p.LastName, p.Phone, p.Email, p.Notes,
+                    status, p.PrimaryGroupId, p.PrimaryGroup?.Name, p.PrimaryGroup?.Color,
+                    p.CreatedAt, false, null, null,
+                    p.OversightUser != null ? p.OversightUser.Name + (p.OversightUser.LastName != null ? " " + p.OversightUser.LastName : "") : null,
+                    joinedAt, true, leftAt));
+            }
+        }
+
+        var formerAdminMembers = new List<GroupMemberResponse>();
+        if (formerUserIds.Count > 0)
+        {
+            var uids = formerUserIds.Select(x => x.UserId).ToList();
+            var users = await db.Users.Where(u => uids.Contains(u.Id))
+                .Include(u => u.UserRoles).ThenInclude(ur => ur.Role)
+                .Include(u => u.PersonStatus).Include(u => u.PrimaryGroup)
+                .ToListAsync();
+            foreach (var (uid, joinedAt, leftAt) in formerUserIds)
+            {
+                var u = users.FirstOrDefault(x => x.Id == uid);
+                if (u is null) continue;
+                var primaryRole = u.UserRoles.Select(ur => ur.Role).FirstOrDefault();
+                var roleTag = primaryRole is null ? null : new MemberRoleTagDto(primaryRole.Name, primaryRole.Color);
+                var status = u.PersonStatus is null ? null : new PersonStatusDto(u.PersonStatus.Id, u.PersonStatus.Name, u.PersonStatus.Color);
+                formerAdminMembers.Add(new GroupMemberResponse(
+                    u.Id, u.Name, u.LastName, u.Phone, u.Email, u.Notes,
+                    status, u.PrimaryGroupId, u.PrimaryGroup?.Name, u.PrimaryGroup?.Color,
+                    u.CreatedAt, true, u.Id, roleTag, null, joinedAt, true, leftAt));
+            }
+        }
+
+        var all = personMembers.Concat(adminResponses).OrderBy(m => m.Name)
+            .Concat(formerPersonMembers.Concat(formerAdminMembers).OrderBy(m => m.Name))
+            .ToList();
         return Ok(all);
     }
 
@@ -177,7 +247,14 @@ public class GroupsController(AppDbContext db) : ControllerBase
         if (await db.HomeGroupMembers.AnyAsync(m => m.HomeGroupId == id && m.PersonId == request.PersonId))
             return Conflict(new { message = "Людина вже є учасником цієї групи" });
 
-        db.HomeGroupMembers.Add(new HomeGroupMember { HomeGroupId = id, PersonId = request.PersonId, Role = request.Role });
+        var member = new HomeGroupMember { HomeGroupId = id, PersonId = request.PersonId, Role = request.Role };
+        db.HomeGroupMembers.Add(member);
+
+        // Close any stale open history record first, then create fresh entry
+        var stale = await db.GroupMemberHistories.FirstOrDefaultAsync(h => h.HomeGroupId == id && h.PersonId == request.PersonId && h.LeftAt == null);
+        if (stale is not null) stale.LeftAt = DateTime.UtcNow;
+        db.GroupMemberHistories.Add(new GroupMemberHistory { HomeGroupId = id, PersonId = request.PersonId, JoinedAt = member.JoinedAt });
+
         await db.SaveChangesAsync();
         return Ok();
     }
@@ -200,7 +277,13 @@ public class GroupsController(AppDbContext db) : ControllerBase
         foreach (var personId in addedIds)
         {
             if (await db.People.AnyAsync(p => p.Id == personId))
-                db.HomeGroupMembers.Add(new HomeGroupMember { HomeGroupId = id, PersonId = personId });
+            {
+                var m = new HomeGroupMember { HomeGroupId = id, PersonId = personId };
+                db.HomeGroupMembers.Add(m);
+                var stale = await db.GroupMemberHistories.FirstOrDefaultAsync(h => h.HomeGroupId == id && h.PersonId == personId && h.LeftAt == null);
+                if (stale is not null) stale.LeftAt = DateTime.UtcNow;
+                db.GroupMemberHistories.Add(new GroupMemberHistory { HomeGroupId = id, PersonId = personId, JoinedAt = m.JoinedAt });
+            }
         }
 
         // Sync PrimaryGroupId for added/removed members
@@ -218,6 +301,12 @@ public class GroupsController(AppDbContext db) : ControllerBase
                 .ToListAsync();
             foreach (var person in removedPeople)
                 person.PrimaryGroupId = null;
+
+            foreach (var personId in removedIds)
+            {
+                var history = await db.GroupMemberHistories.FirstOrDefaultAsync(h => h.HomeGroupId == id && h.PersonId == personId && h.LeftAt == null);
+                if (history is not null) history.LeftAt = DateTime.UtcNow;
+            }
         }
 
         await db.SaveChangesAsync();
@@ -232,6 +321,9 @@ public class GroupsController(AppDbContext db) : ControllerBase
         if (member is null) return NotFound();
 
         db.HomeGroupMembers.Remove(member);
+
+        var person = await db.People.FirstOrDefaultAsync(p => p.Id == personId);
+        if (person is not null && person.PrimaryGroupId == id) person.PrimaryGroupId = null;
 
         var history = await db.GroupMemberHistories.FirstOrDefaultAsync(h => h.HomeGroupId == id && h.PersonId == personId && h.LeftAt == null);
         if (history is not null) history.LeftAt = DateTime.UtcNow;
@@ -269,6 +361,140 @@ public class GroupsController(AppDbContext db) : ControllerBase
 
         await db.SaveChangesAsync();
         return NoContent();
+    }
+
+    [HttpPatch("{id}/members/left-at")]
+    [RequirePermission("groups.members.manage")]
+    public async Task<IActionResult> SetMemberLeftAt(long id, SetMemberLeftAtRequest request)
+    {
+        var leftAt = DateTime.SpecifyKind(request.LeftAt, DateTimeKind.Utc);
+        if (request.PersonId.HasValue)
+        {
+            var history = await db.GroupMemberHistories.FirstOrDefaultAsync(h => h.HomeGroupId == id && h.PersonId == request.PersonId && h.LeftAt != null);
+            if (history is null) return NotFound();
+            history.LeftAt = leftAt;
+        }
+        else if (request.UserId.HasValue)
+        {
+            var history = await db.GroupMemberHistories.FirstOrDefaultAsync(h => h.HomeGroupId == id && h.UserId == request.UserId && h.LeftAt != null);
+            if (history is null) return NotFound();
+            history.LeftAt = leftAt;
+        }
+        else return BadRequest();
+
+        await db.SaveChangesAsync();
+        return NoContent();
+    }
+
+    [HttpPost("{id}/members/transfer")]
+    [RequirePermission("groups.members.manage")]
+    public async Task<IActionResult> TransferMember(long id, TransferMemberRequest request)
+    {
+        if (!await db.HomeGroups.AnyAsync(g => g.Id == request.ToGroupId)) return NotFound();
+        var now = DateTime.UtcNow;
+
+        if (request.PersonId.HasValue)
+        {
+            var member = await db.HomeGroupMembers.FirstOrDefaultAsync(m => m.HomeGroupId == id && m.PersonId == request.PersonId);
+            if (member is null) return NotFound();
+
+            db.HomeGroupMembers.Remove(member);
+
+            // Add to new group
+            if (!await db.HomeGroupMembers.AnyAsync(m => m.HomeGroupId == request.ToGroupId && m.PersonId == request.PersonId))
+                db.HomeGroupMembers.Add(new HomeGroupMember { HomeGroupId = request.ToGroupId, PersonId = request.PersonId.Value, JoinedAt = now });
+
+            var person = await db.People.FirstOrDefaultAsync(p => p.Id == request.PersonId);
+            if (person is not null) person.PrimaryGroupId = request.ToGroupId;
+
+            var oldHistory = await db.GroupMemberHistories.FirstOrDefaultAsync(h => h.HomeGroupId == id && h.PersonId == request.PersonId && h.LeftAt == null);
+            if (oldHistory is not null) oldHistory.LeftAt = now;
+
+            db.GroupMemberHistories.Add(new GroupMemberHistory { HomeGroupId = request.ToGroupId, PersonId = request.PersonId.Value, JoinedAt = now });
+        }
+        else if (request.UserId.HasValue)
+        {
+            var admin = await db.Users.FirstOrDefaultAsync(u => u.Id == request.UserId && u.PrimaryGroupId == id);
+            if (admin is null) return NotFound();
+
+            admin.PrimaryGroupId = request.ToGroupId;
+
+            // Ensure UserHomeGroup exists for new group
+            if (!await db.UserHomeGroups.AnyAsync(uhg => uhg.HomeGroupId == request.ToGroupId && uhg.UserId == request.UserId))
+                db.UserHomeGroups.Add(new UserHomeGroup { UserId = request.UserId.Value, HomeGroupId = request.ToGroupId, AssignedAt = now });
+
+            var oldHistory = await db.GroupMemberHistories.FirstOrDefaultAsync(h => h.HomeGroupId == id && h.UserId == request.UserId && h.LeftAt == null);
+            if (oldHistory is not null) oldHistory.LeftAt = now;
+
+            db.GroupMemberHistories.Add(new GroupMemberHistory { HomeGroupId = request.ToGroupId, UserId = request.UserId.Value, JoinedAt = now });
+        }
+        else return BadRequest();
+
+        await db.SaveChangesAsync();
+        return NoContent();
+    }
+
+    [HttpGet("{id}/members/timeline/{personId}")]
+    public async Task<ActionResult<List<TimelineEventDto>>> GetPersonTimeline(long id, long personId)
+    {
+        var history = await db.GroupMemberHistories
+            .Where(h => h.PersonId == personId)
+            .Include(h => h.HomeGroup)
+            .OrderBy(h => h.JoinedAt)
+            .ToListAsync();
+
+        var activity = await db.PersonActivities
+            .Where(a => a.PersonId == personId && (a.Type == "status_change" || a.Type == "oversight_change"))
+            .OrderBy(a => a.CreatedAt)
+            .ToListAsync();
+
+        var events = new List<TimelineEventDto>();
+
+        foreach (var h in history)
+        {
+            events.Add(new TimelineEventDto("group_joined", h.JoinedAt, h.HomeGroupId, h.HomeGroup.Name, h.HomeGroup.Color));
+            if (h.LeftAt.HasValue)
+                events.Add(new TimelineEventDto("group_left", h.LeftAt.Value, h.HomeGroupId, h.HomeGroup.Name, h.HomeGroup.Color));
+        }
+
+        foreach (var a in activity)
+        {
+            if (a.Type == "status_change")
+                events.Add(new TimelineEventDto("status_change", a.CreatedAt, StatusName: a.NewStatusName, StatusColor: a.NewStatusColor, OldStatusName: a.OldStatusName, OldStatusColor: a.OldStatusColor));
+            else if (a.Type == "oversight_change")
+                events.Add(new TimelineEventDto("oversight_change", a.CreatedAt, OversightName: a.NewValue, OldOversightName: a.OldValue));
+        }
+
+        return Ok(events.OrderBy(e => e.Date).ToList());
+    }
+
+    [HttpGet("{id}/members/admin-timeline/{userId}")]
+    public async Task<ActionResult<List<TimelineEventDto>>> GetAdminTimeline(long id, long userId)
+    {
+        var history = await db.GroupMemberHistories
+            .Where(h => h.UserId == userId)
+            .Include(h => h.HomeGroup)
+            .OrderBy(h => h.JoinedAt)
+            .ToListAsync();
+
+        var activity = await db.UserActivities
+            .Where(a => a.UserId == userId)
+            .OrderBy(a => a.CreatedAt)
+            .ToListAsync();
+
+        var events = new List<TimelineEventDto>();
+
+        foreach (var h in history)
+        {
+            events.Add(new TimelineEventDto("group_joined", h.JoinedAt, h.HomeGroupId, h.HomeGroup.Name, h.HomeGroup.Color));
+            if (h.LeftAt.HasValue)
+                events.Add(new TimelineEventDto("group_left", h.LeftAt.Value, h.HomeGroupId, h.HomeGroup.Name, h.HomeGroup.Color));
+        }
+
+        foreach (var a in activity)
+            events.Add(new TimelineEventDto("status_change", a.CreatedAt, StatusName: a.NewStatusName, StatusColor: a.NewStatusColor, OldStatusName: a.OldStatusName, OldStatusColor: a.OldStatusColor));
+
+        return Ok(events.OrderBy(e => e.Date).ToList());
     }
 
     [HttpGet("{id}/members/history")]

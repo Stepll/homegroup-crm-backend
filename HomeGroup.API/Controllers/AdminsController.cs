@@ -3,6 +3,7 @@ using System.Text.Json;
 using HomeGroup.API.Authorization;
 using HomeGroup.API.Data;
 using HomeGroup.API.Models.DTOs.Admins;
+using HomeGroup.API.Models.DTOs.Groups;
 using HomeGroup.API.Models.DTOs.PersonStatuses;
 using HomeGroup.API.Models.Entities;
 using Microsoft.AspNetCore.Authorization;
@@ -106,8 +107,12 @@ public class AdminsController(AppDbContext db) : ControllerBase
     [HttpPut("{id:long}/profile")]
     public async Task<ActionResult<AdminResponse>> UpdateProfile(long id, UpdateAdminProfileRequest request)
     {
-        var admin = await db.Users.FindAsync(id);
+        var admin = await db.Users.Include(u => u.PersonStatus).FirstOrDefaultAsync(u => u.Id == id);
         if (admin is null) return NotFound();
+
+        var oldStatusId = admin.PersonStatusId;
+        var oldStatusName = admin.PersonStatus?.Name;
+        var oldStatusColor = admin.PersonStatus?.Color;
 
         if (!string.IsNullOrWhiteSpace(request.Name)) admin.Name = request.Name.Trim();
         if (request.LastName is not null) admin.LastName = string.IsNullOrWhiteSpace(request.LastName) ? null : request.LastName.Trim();
@@ -125,6 +130,26 @@ public class AdminsController(AppDbContext db) : ControllerBase
         admin.PersonStatusId = request.PersonStatusId;
 
         await db.SaveChangesAsync();
+
+        if (oldStatusId != request.PersonStatusId)
+        {
+            await db.Entry(admin).Reference(u => u.PersonStatus).LoadAsync();
+            long.TryParse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value, out var actorId);
+            db.UserActivities.Add(new UserActivity
+            {
+                UserId = id,
+                Type = "status_change",
+                AuthorId = actorId == 0 ? null : actorId,
+                OldStatusId = oldStatusId,
+                OldStatusName = oldStatusName,
+                OldStatusColor = oldStatusColor,
+                NewStatusId = admin.PersonStatus?.Id,
+                NewStatusName = admin.PersonStatus?.Name,
+                NewStatusColor = admin.PersonStatus?.Color,
+            });
+            await db.SaveChangesAsync();
+        }
+
         var updated = await LoadAdmin(id);
         return Ok(ToResponse(updated!));
     }
