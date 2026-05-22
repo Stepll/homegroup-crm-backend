@@ -355,23 +355,46 @@ public class GroupsController(AppDbContext db) : ControllerBase
     [RequirePermission("groups.members.manage")]
     public async Task<IActionResult> SetMemberJoinedAt(long id, SetMemberJoinedAtRequest request)
     {
+        var joinedAt = DateTime.SpecifyKind(request.JoinedAt, DateTimeKind.Utc);
         if (request.PersonId.HasValue)
         {
             var member = await db.HomeGroupMembers.FirstOrDefaultAsync(m => m.HomeGroupId == id && m.PersonId == request.PersonId);
-            if (member is null) return NotFound();
-            member.JoinedAt = DateTime.SpecifyKind(request.JoinedAt, DateTimeKind.Utc);
-
-            var history = await db.GroupMemberHistories.FirstOrDefaultAsync(h => h.HomeGroupId == id && h.PersonId == request.PersonId && h.LeftAt == null);
-            if (history is not null) history.JoinedAt = member.JoinedAt;
+            if (member is not null)
+            {
+                member.JoinedAt = joinedAt;
+                var openHistory = await db.GroupMemberHistories.FirstOrDefaultAsync(h => h.HomeGroupId == id && h.PersonId == request.PersonId && h.LeftAt == null);
+                if (openHistory is not null) openHistory.JoinedAt = joinedAt;
+            }
+            else
+            {
+                // Former member — update most recent closed history entry
+                var history = await db.GroupMemberHistories
+                    .Where(h => h.HomeGroupId == id && h.PersonId == request.PersonId && h.LeftAt != null)
+                    .OrderByDescending(h => h.LeftAt)
+                    .FirstOrDefaultAsync();
+                if (history is null) return NotFound();
+                history.JoinedAt = joinedAt;
+            }
         }
         else if (request.UserId.HasValue)
         {
             var uhg = await db.UserHomeGroups.FirstOrDefaultAsync(u => u.HomeGroupId == id && u.UserId == request.UserId);
-            if (uhg is null) return NotFound();
-            uhg.AssignedAt = DateTime.SpecifyKind(request.JoinedAt, DateTimeKind.Utc);
-
-            var history = await db.GroupMemberHistories.FirstOrDefaultAsync(h => h.HomeGroupId == id && h.UserId == request.UserId && h.LeftAt == null);
-            if (history is not null) history.JoinedAt = uhg.AssignedAt;
+            if (uhg is not null)
+            {
+                uhg.AssignedAt = joinedAt;
+                var openHistory = await db.GroupMemberHistories.FirstOrDefaultAsync(h => h.HomeGroupId == id && h.UserId == request.UserId && h.LeftAt == null);
+                if (openHistory is not null) openHistory.JoinedAt = joinedAt;
+            }
+            else
+            {
+                // Former admin — update most recent closed history entry
+                var history = await db.GroupMemberHistories
+                    .Where(h => h.HomeGroupId == id && h.UserId == request.UserId && h.LeftAt != null)
+                    .OrderByDescending(h => h.LeftAt)
+                    .FirstOrDefaultAsync();
+                if (history is null) return NotFound();
+                history.JoinedAt = joinedAt;
+            }
         }
         else
         {
