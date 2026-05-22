@@ -305,7 +305,18 @@ public class GroupsController(AppDbContext db) : ControllerBase
             foreach (var personId in removedIds)
             {
                 var history = await db.GroupMemberHistories.FirstOrDefaultAsync(h => h.HomeGroupId == id && h.PersonId == personId && h.LeftAt == null);
-                if (history is not null) history.LeftAt = DateTime.UtcNow;
+                if (history is not null)
+                    history.LeftAt = DateTime.UtcNow;
+                else
+                {
+                    var removed = current.FirstOrDefault(m => m.PersonId == personId);
+                    db.GroupMemberHistories.Add(new GroupMemberHistory
+                    {
+                        HomeGroupId = id, PersonId = personId,
+                        JoinedAt = removed?.JoinedAt ?? DateTime.UtcNow,
+                        LeftAt = DateTime.UtcNow,
+                    });
+                }
             }
         }
 
@@ -326,7 +337,15 @@ public class GroupsController(AppDbContext db) : ControllerBase
         if (person is not null && person.PrimaryGroupId == id) person.PrimaryGroupId = null;
 
         var history = await db.GroupMemberHistories.FirstOrDefaultAsync(h => h.HomeGroupId == id && h.PersonId == personId && h.LeftAt == null);
-        if (history is not null) history.LeftAt = DateTime.UtcNow;
+        if (history is not null)
+            history.LeftAt = DateTime.UtcNow;
+        else
+            db.GroupMemberHistories.Add(new GroupMemberHistory
+            {
+                HomeGroupId = id, PersonId = personId,
+                JoinedAt = member.JoinedAt,
+                LeftAt = DateTime.UtcNow,
+            });
 
         await db.SaveChangesAsync();
         return NoContent();
@@ -408,7 +427,14 @@ public class GroupsController(AppDbContext db) : ControllerBase
             if (person is not null) person.PrimaryGroupId = request.ToGroupId;
 
             var oldHistory = await db.GroupMemberHistories.FirstOrDefaultAsync(h => h.HomeGroupId == id && h.PersonId == request.PersonId && h.LeftAt == null);
-            if (oldHistory is not null) oldHistory.LeftAt = now;
+            if (oldHistory is not null)
+                oldHistory.LeftAt = now;
+            else
+                db.GroupMemberHistories.Add(new GroupMemberHistory
+                {
+                    HomeGroupId = id, PersonId = request.PersonId.Value,
+                    JoinedAt = member.JoinedAt, LeftAt = now,
+                });
 
             db.GroupMemberHistories.Add(new GroupMemberHistory { HomeGroupId = request.ToGroupId, PersonId = request.PersonId.Value, JoinedAt = now });
         }
@@ -417,6 +443,7 @@ public class GroupsController(AppDbContext db) : ControllerBase
             var admin = await db.Users.FirstOrDefaultAsync(u => u.Id == request.UserId && u.PrimaryGroupId == id);
             if (admin is null) return NotFound();
 
+            var adminGroup = await db.UserHomeGroups.FirstOrDefaultAsync(uhg => uhg.HomeGroupId == id && uhg.UserId == request.UserId);
             admin.PrimaryGroupId = request.ToGroupId;
 
             // Ensure UserHomeGroup exists for new group
@@ -424,7 +451,14 @@ public class GroupsController(AppDbContext db) : ControllerBase
                 db.UserHomeGroups.Add(new UserHomeGroup { UserId = request.UserId.Value, HomeGroupId = request.ToGroupId, AssignedAt = now });
 
             var oldHistory = await db.GroupMemberHistories.FirstOrDefaultAsync(h => h.HomeGroupId == id && h.UserId == request.UserId && h.LeftAt == null);
-            if (oldHistory is not null) oldHistory.LeftAt = now;
+            if (oldHistory is not null)
+                oldHistory.LeftAt = now;
+            else
+                db.GroupMemberHistories.Add(new GroupMemberHistory
+                {
+                    HomeGroupId = id, UserId = request.UserId.Value,
+                    JoinedAt = adminGroup?.AssignedAt ?? now, LeftAt = now,
+                });
 
             db.GroupMemberHistories.Add(new GroupMemberHistory { HomeGroupId = request.ToGroupId, UserId = request.UserId.Value, JoinedAt = now });
         }
