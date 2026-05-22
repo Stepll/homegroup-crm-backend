@@ -27,6 +27,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<PersonActivity> PersonActivities => Set<PersonActivity>();
     public DbSet<AdminTask> AdminTasks => Set<AdminTask>();
     public DbSet<GroupNeed> GroupNeeds => Set<GroupNeed>();
+    public DbSet<GroupMemberHistory> GroupMemberHistories => Set<GroupMemberHistory>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -231,6 +232,24 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             .WithMany()
             .HasForeignKey(a => a.AuthorId)
             .OnDelete(DeleteBehavior.SetNull);
+
+        modelBuilder.Entity<GroupMemberHistory>()
+            .HasOne(h => h.Person)
+            .WithMany()
+            .HasForeignKey(h => h.PersonId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<GroupMemberHistory>()
+            .HasOne(h => h.User)
+            .WithMany()
+            .HasForeignKey(h => h.UserId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<GroupMemberHistory>()
+            .HasOne(h => h.HomeGroup)
+            .WithMany()
+            .HasForeignKey(h => h.HomeGroupId)
+            .OnDelete(DeleteBehavior.Cascade);
 
         // Seed roles
         modelBuilder.Entity<Role>().HasData(

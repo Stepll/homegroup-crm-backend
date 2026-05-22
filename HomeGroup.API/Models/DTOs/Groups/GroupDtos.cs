@@ -59,3 +59,7 @@ public record GroupNeedDto(long Id, string SubjectName, string Description, stri
 public record CreateGroupNeedRequest(string SubjectName, string Description, long? PersonId = null, long? UserId = null);
 
 public record UpdateGroupNeedRequest(string SubjectName, string Description, string Status, long? PersonId = null, long? UserId = null);
+
+public record SetMemberJoinedAtRequest(long? PersonId, long? UserId, DateTime JoinedAt);
+
+public record GroupMemberHistoryDto(long Id, long? PersonId, string? PersonName, long? UserId, string? UserName, long HomeGroupId, string HomeGroupName, DateTime JoinedAt, DateTime? LeftAt);

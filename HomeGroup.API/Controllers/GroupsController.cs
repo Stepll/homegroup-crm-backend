@@ -232,8 +232,68 @@ public class GroupsController(AppDbContext db) : ControllerBase
         if (member is null) return NotFound();
 
         db.HomeGroupMembers.Remove(member);
+
+        var history = await db.GroupMemberHistories.FirstOrDefaultAsync(h => h.HomeGroupId == id && h.PersonId == personId && h.LeftAt == null);
+        if (history is not null) history.LeftAt = DateTime.UtcNow;
+
         await db.SaveChangesAsync();
         return NoContent();
+    }
+
+    [HttpPatch("{id}/members/joined-at")]
+    [RequirePermission("groups.members.manage")]
+    public async Task<IActionResult> SetMemberJoinedAt(long id, SetMemberJoinedAtRequest request)
+    {
+        if (request.PersonId.HasValue)
+        {
+            var member = await db.HomeGroupMembers.FirstOrDefaultAsync(m => m.HomeGroupId == id && m.PersonId == request.PersonId);
+            if (member is null) return NotFound();
+            member.JoinedAt = DateTime.SpecifyKind(request.JoinedAt, DateTimeKind.Utc);
+
+            var history = await db.GroupMemberHistories.FirstOrDefaultAsync(h => h.HomeGroupId == id && h.PersonId == request.PersonId && h.LeftAt == null);
+            if (history is not null) history.JoinedAt = member.JoinedAt;
+        }
+        else if (request.UserId.HasValue)
+        {
+            var uhg = await db.UserHomeGroups.FirstOrDefaultAsync(u => u.HomeGroupId == id && u.UserId == request.UserId);
+            if (uhg is null) return NotFound();
+            uhg.AssignedAt = DateTime.SpecifyKind(request.JoinedAt, DateTimeKind.Utc);
+
+            var history = await db.GroupMemberHistories.FirstOrDefaultAsync(h => h.HomeGroupId == id && h.UserId == request.UserId && h.LeftAt == null);
+            if (history is not null) history.JoinedAt = uhg.AssignedAt;
+        }
+        else
+        {
+            return BadRequest(new { message = "PersonId або UserId обов'язковий" });
+        }
+
+        await db.SaveChangesAsync();
+        return NoContent();
+    }
+
+    [HttpGet("{id}/members/history")]
+    [RequirePermission("groups.members.manage")]
+    public async Task<ActionResult<List<GroupMemberHistoryDto>>> GetMemberHistory(long id)
+    {
+        var history = await db.GroupMemberHistories
+            .Where(h => h.HomeGroupId == id)
+            .Include(h => h.Person)
+            .Include(h => h.User)
+            .Include(h => h.HomeGroup)
+            .OrderByDescending(h => h.JoinedAt)
+            .Select(h => new GroupMemberHistoryDto(
+                h.Id,
+                h.PersonId,
+                h.Person != null ? h.Person.Name + (h.Person.LastName != null ? " " + h.Person.LastName : "") : null,
+                h.UserId,
+                h.User != null ? h.User.Name + (h.User.LastName != null ? " " + h.User.LastName : "") : null,
+                h.HomeGroupId,
+                h.HomeGroup.Name,
+                h.JoinedAt,
+                h.LeftAt))
+            .ToListAsync();
+
+        return Ok(history);
     }
 
     // Custom field definitions for a group
