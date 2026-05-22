@@ -33,6 +33,7 @@ public record AttendanceTableMember(
     string Name,
     string? LastName,
     string JoinedAt,
+    string? LeftAt,
     double AttendanceRate,
     Dictionary<string, bool> Attendance);
 

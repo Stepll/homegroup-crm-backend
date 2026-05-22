@@ -372,6 +372,9 @@ public class AttendanceController(AppDbContext db) : ControllerBase
 
         var members = new List<AttendanceTableMember>();
 
+        var currentPersonIds = personMembers.Select(p => p.PersonId).ToHashSet();
+        var currentUserIds = userMembers.Select(u => u.UserId).ToHashSet();
+
         foreach (var pm in personMembers)
         {
             var attendanceMap = BuildAttendanceMap(
@@ -386,6 +389,7 @@ public class AttendanceController(AppDbContext db) : ControllerBase
                 pm.PersonId, null,
                 pm.Person.Name, pm.Person.LastName,
                 DateOnly.FromDateTime(pm.JoinedAt).ToString("yyyy-MM-dd"),
+                null,
                 rate, attendanceMap));
         }
 
@@ -403,7 +407,56 @@ public class AttendanceController(AppDbContext db) : ControllerBase
                 null, um.UserId,
                 um.User.Name, um.User.LastName,
                 DateOnly.FromDateTime(um.AssignedAt).ToString("yyyy-MM-dd"),
+                null,
                 rate, attendanceMap));
+        }
+
+        // Include past members (from history) who have attendance records in this group
+        var histories = await db.GroupMemberHistories
+            .Where(h => h.HomeGroupId == groupId && h.LeftAt != null)
+            .Include(h => h.Person)
+            .Include(h => h.User)
+            .ToListAsync();
+
+        var pastMembers = histories
+            .Where(h => (h.PersonId == null || !currentPersonIds.Contains(h.PersonId.Value))
+                     && (h.UserId == null || !currentUserIds.Contains(h.UserId.Value)))
+            .GroupBy(h => h.PersonId.HasValue ? $"p_{h.PersonId}" : $"u_{h.UserId}")
+            .Select(g => g.OrderByDescending(h => h.JoinedAt).First())
+            .ToList();
+
+        foreach (var hist in pastMembers)
+        {
+            if (hist.PersonId.HasValue && hist.Person != null)
+            {
+                var attendanceMap = BuildAttendanceMap(
+                    dates,
+                    attendanceRecords.Where(a => a.PersonId == hist.PersonId).ToList());
+                var rate = CalcRate(
+                    allAttendance.Where(a => a.PersonId == hist.PersonId).ToList(),
+                    cancelledDates);
+                members.Add(new AttendanceTableMember(
+                    hist.PersonId, null,
+                    hist.Person.Name, hist.Person.LastName,
+                    DateOnly.FromDateTime(hist.JoinedAt).ToString("yyyy-MM-dd"),
+                    DateOnly.FromDateTime(hist.LeftAt!.Value).ToString("yyyy-MM-dd"),
+                    rate, attendanceMap));
+            }
+            else if (hist.UserId.HasValue && hist.User != null)
+            {
+                var attendanceMap = BuildAttendanceMap(
+                    dates,
+                    attendanceRecords.Where(a => a.UserId == hist.UserId).ToList());
+                var rate = CalcRate(
+                    allAttendance.Where(a => a.UserId == hist.UserId).ToList(),
+                    cancelledDates);
+                members.Add(new AttendanceTableMember(
+                    null, hist.UserId,
+                    hist.User.Name, hist.User.LastName,
+                    DateOnly.FromDateTime(hist.JoinedAt).ToString("yyyy-MM-dd"),
+                    DateOnly.FromDateTime(hist.LeftAt!.Value).ToString("yyyy-MM-dd"),
+                    rate, attendanceMap));
+            }
         }
 
         members = members.OrderBy(m => m.Name).ThenBy(m => m.LastName).ToList();
@@ -421,8 +474,9 @@ public class AttendanceController(AppDbContext db) : ControllerBase
 
         foreach (var date in dates)
         {
-            var key = date.ToString("yyyy-MM-dd");
-            map[key] = recordByDate.TryGetValue(date, out var val) ? val : false;
+            if (recordByDate.TryGetValue(date, out var val))
+                map[date.ToString("yyyy-MM-dd")] = val;
+            // Dates with no record are omitted — frontend treats missing keys as "no data" (gray)
         }
 
         return map;
