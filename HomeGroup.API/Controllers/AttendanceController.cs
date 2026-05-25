@@ -70,6 +70,30 @@ public class AttendanceController(AppDbContext db) : ControllerBase
         return Ok(summary);
     }
 
+    [HttpGet("dates")]
+    [RequirePermission("attendance.view")]
+    public async Task<ActionResult<List<string>>> GetMeetingDates([FromQuery] long groupId)
+    {
+        var fromAttendance = await db.Attendances
+            .Where(a => a.HomeGroupId == groupId)
+            .Select(a => a.MeetingDate)
+            .Distinct()
+            .ToListAsync();
+
+        var fromMeta = await db.AttendanceMetas
+            .Where(m => m.HomeGroupId == groupId)
+            .Select(m => m.MeetingDate)
+            .ToListAsync();
+
+        var allDates = fromAttendance
+            .Union(fromMeta)
+            .OrderByDescending(d => d)
+            .Select(d => d.ToString("yyyy-MM-dd"))
+            .ToList();
+
+        return Ok(allDates);
+    }
+
     [HttpPost]
     [RequirePermission("attendance.record")]
     public async Task<IActionResult> Record(RecordAttendanceRequest request)
