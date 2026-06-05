@@ -85,8 +85,19 @@ public class AttendanceController(AppDbContext db) : ControllerBase
             .Select(m => m.MeetingDate)
             .ToListAsync();
 
+        // Include rescheduled meetings (real overrides) — but skip pure cancellation markers
+        var fromCalendar = await db.CalendarEvents
+            .Where(e => e.HomeGroupId == groupId
+                && e.Type == CalendarEventType.HomeGroup
+                && !e.IsRecurring
+                && e.IsHomeGroupMeeting == true
+                && e.Date != null)
+            .Select(e => e.Date!.Value)
+            .ToListAsync();
+
         var allDates = fromAttendance
             .Union(fromMeta)
+            .Union(fromCalendar)
             .OrderByDescending(d => d)
             .Select(d => d.ToString("yyyy-MM-dd"))
             .ToList();
@@ -318,8 +329,18 @@ public class AttendanceController(AppDbContext db) : ControllerBase
             .Select(m => m.MeetingDate)
             .ToListAsync();
 
+        // Schedule overrides — CalendarEvent dates for HomeGroup (rescheduled/cancellation markers)
+        var dbDatesFromCalendar = await db.CalendarEvents
+            .Where(e => e.HomeGroupId == groupId
+                && e.Type == CalendarEventType.HomeGroup
+                && !e.IsRecurring
+                && e.Date != null)
+            .Select(e => e.Date!.Value)
+            .ToListAsync();
+
         var dbDates = dbDatesFromAttendance
             .Union(dbDatesFromMeta)
+            .Union(dbDatesFromCalendar)
             .OrderByDescending(d => d)
             .ToList();
 
@@ -357,16 +378,31 @@ public class AttendanceController(AppDbContext db) : ControllerBase
 
         var metaByDate = metas.ToDictionary(m => m.MeetingDate);
 
-        // Build meetings list
+        // Load schedule overrides (cancellation markers) for these dates
+        var scheduleEvents = await db.CalendarEvents
+            .Where(e => e.HomeGroupId == groupId
+                && e.Type == CalendarEventType.HomeGroup
+                && !e.IsRecurring
+                && e.Date != null
+                && dates.Contains(e.Date!.Value))
+            .ToListAsync();
+
+        var cancelledFromSchedule = scheduleEvents
+            .Where(e => e.IsHomeGroupMeeting == false)
+            .Select(e => e.Date!.Value)
+            .ToHashSet();
+
+        // Build meetings list — cancelled if EITHER AttendanceMeta.IsCancelled OR CalendarEvent.IsHomeGroupMeeting=false
         var meetings = dates.Select(d =>
         {
             metaByDate.TryGetValue(d, out var m);
+            var isCancelled = (m?.IsCancelled ?? false) || cancelledFromSchedule.Contains(d);
             return new AttendanceTableMeeting(
                 d.ToString("yyyy-MM-dd"),
                 m?.GuestCount ?? 0,
                 m?.GuestInfo,
                 m?.Notes,
-                m?.IsCancelled ?? false,
+                isCancelled,
                 dbDateSet.Contains(d));
         }).ToList();
 
@@ -387,8 +423,20 @@ public class AttendanceController(AppDbContext db) : ControllerBase
             .Where(a => a.HomeGroupId == groupId && dates.Contains(a.MeetingDate))
             .ToListAsync();
 
-        // For attendance rate: load ALL records (excluding cancelled meetings)
-        var cancelledDates = new HashSet<DateOnly>(metas.Where(m => m.IsCancelled).Select(m => m.MeetingDate));
+        // For attendance rate: load ALL cancellation markers across history (both AttendanceMeta and CalendarEvent overrides)
+        var allMetaCancelled = await db.AttendanceMetas
+            .Where(m => m.HomeGroupId == groupId && m.IsCancelled)
+            .Select(m => m.MeetingDate)
+            .ToListAsync();
+        var allCalendarCancelled = await db.CalendarEvents
+            .Where(e => e.HomeGroupId == groupId
+                && e.Type == CalendarEventType.HomeGroup
+                && !e.IsRecurring
+                && e.IsHomeGroupMeeting == false
+                && e.Date != null)
+            .Select(e => e.Date!.Value)
+            .ToListAsync();
+        var cancelledDates = allMetaCancelled.Union(allCalendarCancelled).ToHashSet();
 
         var allAttendance = await db.Attendances
             .Where(a => a.HomeGroupId == groupId)
