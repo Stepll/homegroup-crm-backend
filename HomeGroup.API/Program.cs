@@ -77,6 +77,7 @@ using (var scope = app.Services.CreateScope())
     context.Database.Migrate();
 
     await SeedSuperAdmin(context, builder.Configuration);
+    await MigrateLegacyScheduleData(context);
 }
 
 app.UseSwagger();
@@ -112,4 +113,60 @@ static async Task SeedSuperAdmin(AppDbContext db, IConfiguration config)
         VALUES (0, 1, NOW())
         ON CONFLICT ("UserId", "RoleId") DO NOTHING
         """);
+}
+
+// One-time migration: convert legacy NextMeetingOverrideDate (future-only) into a CalendarEvent override.
+// Cancellations from AttendanceMeta.IsCancelled already sync to CalendarEvent via SyncCancellationToCalendar.
+static async Task MigrateLegacyScheduleData(AppDbContext db)
+{
+    var today = DateOnly.FromDateTime(DateTime.UtcNow);
+    var groups = await db.HomeGroups
+        .Where(g => g.NextMeetingOverrideDate != null)
+        .ToListAsync();
+
+    foreach (var group in groups)
+    {
+        if (string.IsNullOrEmpty(group.NextMeetingOverrideDate)) continue;
+        if (!DateOnly.TryParse(group.NextMeetingOverrideDate, out var overrideDate))
+        {
+            group.NextMeetingOverrideDate = null;
+            continue;
+        }
+        if (overrideDate < today)
+        {
+            // Stale — clear it
+            group.NextMeetingOverrideDate = null;
+            continue;
+        }
+
+        // If a CalendarEvent already exists at this date as a real meeting, nothing to do
+        var existing = await db.CalendarEvents.FirstOrDefaultAsync(e =>
+            e.HomeGroupId == group.Id
+            && e.Type == HomeGroup.API.Models.Entities.CalendarEventType.HomeGroup
+            && !e.IsRecurring
+            && e.Date == overrideDate);
+
+        if (existing is null)
+        {
+            db.CalendarEvents.Add(new HomeGroup.API.Models.Entities.CalendarEvent
+            {
+                Type = HomeGroup.API.Models.Entities.CalendarEventType.HomeGroup,
+                HomeGroupId = group.Id,
+                IsRecurring = false,
+                Date = overrideDate,
+                IsHomeGroupMeeting = true,
+                Title = group.Name,
+            });
+        }
+        else if (existing.IsHomeGroupMeeting != true)
+        {
+            existing.IsHomeGroupMeeting = true;
+        }
+
+        // Clear after conversion — schedule is now driven by CalendarEvent
+        group.NextMeetingOverrideDate = null;
+    }
+
+    if (groups.Count > 0)
+        await db.SaveChangesAsync();
 }

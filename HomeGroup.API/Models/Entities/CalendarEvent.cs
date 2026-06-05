@@ -26,5 +26,12 @@ public class CalendarEvent
     public DateOnly? Date { get; set; }
     public string? GoogleEventId { get; set; }
     public bool? IsHomeGroupMeeting { get; set; }
+
+    // Schedule overrides — links between weeks for moved meetings.
+    // MovedFromDate: this event was moved FROM this original date (lives on the destination event).
+    // MovedToDate: this event (cancellation marker) was created because the meeting was moved TO this date (lives on the source shadow).
+    public DateOnly? MovedFromDate { get; set; }
+    public DateOnly? MovedToDate { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }
