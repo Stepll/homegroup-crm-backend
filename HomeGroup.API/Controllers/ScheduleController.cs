@@ -58,6 +58,7 @@ public class ScheduleController(AppDbContext db) : ControllerBase
             .Select(g => new { Date = g.Key, Count = g.Count() })
             .ToListAsync();
         var attCountByDate = attCounts.ToDictionary(x => x.Date, x => x.Count);
+        var datesWithAttendance = new HashSet<DateOnly>(attCountByDate.Keys);
 
         var firstMonday = SnapToMonday(from);
         var weeks = new List<ScheduleWeekDto>();
@@ -83,19 +84,13 @@ public class ScheduleController(AppDbContext db) : ControllerBase
                 if (realEvent.MovedFromDate.HasValue)
                 {
                     var sourceInSameWeek = SnapToMonday(realEvent.MovedFromDate.Value) == weekStart;
-                    if (sourceInSameWeek)
-                    {
-                        status = "rescheduled_internal";
-                    }
-                    else
-                    {
-                        status = "moved_in";
-                        movedFromDate = realEvent.MovedFromDate.Value.ToString("yyyy-MM-dd");
-                    }
+                    movedFromDate = realEvent.MovedFromDate.Value.ToString("yyyy-MM-dd");
+                    status = sourceInSameWeek ? "rescheduled_internal" : "moved_in";
                 }
                 else if (realEvent.Date != defaultDate)
                 {
                     status = "rescheduled_internal";
+                    movedFromDate = defaultDate.ToString("yyyy-MM-dd");
                 }
             }
             else if (cancelEvent is not null)
@@ -109,6 +104,21 @@ public class ScheduleController(AppDbContext db) : ControllerBase
                 else
                 {
                     status = "cancelled";
+                }
+            }
+            else
+            {
+                // No explicit override — infer from attendance records
+                var hasAttendanceOnDefault = datesWithAttendance.Contains(defaultDate);
+                var nonDefaultDay = Enumerable.Range(0, 7)
+                    .Select(i => weekStart.AddDays(i))
+                    .FirstOrDefault(d => d != defaultDate && datesWithAttendance.Contains(d));
+
+                if (!hasAttendanceOnDefault && nonDefaultDay != default)
+                {
+                    effectiveDate = nonDefaultDay.ToString("yyyy-MM-dd");
+                    status = "rescheduled_internal";
+                    movedFromDate = defaultDate.ToString("yyyy-MM-dd");
                 }
             }
 
