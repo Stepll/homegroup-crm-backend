@@ -82,8 +82,16 @@ public class ScheduleController(AppDbContext db) : ControllerBase
                 effectiveDate = realEvent.Date!.Value.ToString("yyyy-MM-dd");
                 if (realEvent.MovedFromDate.HasValue)
                 {
-                    status = "moved_in";
-                    movedFromDate = realEvent.MovedFromDate.Value.ToString("yyyy-MM-dd");
+                    var sourceInSameWeek = SnapToMonday(realEvent.MovedFromDate.Value) == weekStart;
+                    if (sourceInSameWeek)
+                    {
+                        status = "rescheduled_internal";
+                    }
+                    else
+                    {
+                        status = "moved_in";
+                        movedFromDate = realEvent.MovedFromDate.Value.ToString("yyyy-MM-dd");
+                    }
                 }
                 else if (realEvent.Date != defaultDate)
                 {
