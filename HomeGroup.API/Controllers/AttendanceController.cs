@@ -347,6 +347,17 @@ public class AttendanceController(AppDbContext db) : ControllerBase
             .OrderByDescending(d => d)
             .ToList();
 
+        // Dates where the meeting was moved AWAY from — don't generate them as virtual columns
+        var movedOutDates = (await db.CalendarEvents
+            .Where(e => e.HomeGroupId == groupId
+                && e.Type == CalendarEventType.HomeGroup
+                && !e.IsRecurring
+                && e.IsHomeGroupMeeting == false
+                && e.MovedToDate != null
+                && e.Date != null)
+            .Select(e => e.Date!.Value)
+            .ToListAsync()).ToHashSet();
+
         // Generate virtual dates based on group schedule to fill up to tableSize
         var allDates = new HashSet<DateOnly>(dbDates);
 
@@ -360,10 +371,13 @@ public class AttendanceController(AppDbContext db) : ControllerBase
             candidate = candidate.AddDays(-daysBack);
             // candidate is now on the correct day-of-week at or before anchor
 
-            while (allDates.Count < tableSize)
+            int safety = 0;
+            while (allDates.Count < tableSize && safety < tableSize * 4)
             {
-                allDates.Add(candidate);
+                if (!movedOutDates.Contains(candidate))
+                    allDates.Add(candidate);
                 candidate = candidate.AddDays(-7);
+                safety++;
             }
         }
 
