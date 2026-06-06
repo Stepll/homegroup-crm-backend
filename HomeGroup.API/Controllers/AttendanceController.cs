@@ -95,9 +95,22 @@ public class AttendanceController(AppDbContext db) : ControllerBase
             .Select(e => e.Date!.Value)
             .ToListAsync();
 
+        // Exclude dates where meeting was moved AWAY (shadow markers).
+        // Old attendance/meta/plans on these dates are visually hidden.
+        var movedOutDates = (await db.CalendarEvents
+            .Where(e => e.HomeGroupId == groupId
+                && e.Type == CalendarEventType.HomeGroup
+                && !e.IsRecurring
+                && e.IsHomeGroupMeeting == false
+                && e.MovedToDate != null
+                && e.Date != null)
+            .Select(e => e.Date!.Value)
+            .ToListAsync()).ToHashSet();
+
         var allDates = fromAttendance
             .Union(fromMeta)
             .Union(fromCalendar)
+            .Where(d => !movedOutDates.Contains(d))
             .OrderByDescending(d => d)
             .Select(d => d.ToString("yyyy-MM-dd"))
             .ToList();
