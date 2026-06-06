@@ -329,12 +329,15 @@ public class AttendanceController(AppDbContext db) : ControllerBase
             .Select(m => m.MeetingDate)
             .ToListAsync();
 
-        // Schedule overrides — CalendarEvent dates for HomeGroup (rescheduled/cancellation markers)
+        // Schedule overrides — CalendarEvent dates for HomeGroup (real meetings + manual cancellations).
+        // EXCLUDE move shadows (IsHomeGroupMeeting=false WITH MovedToDate) — those just say
+        // "the meeting was moved away from this date", they aren't a real cancelled meeting.
         var dbDatesFromCalendar = await db.CalendarEvents
             .Where(e => e.HomeGroupId == groupId
                 && e.Type == CalendarEventType.HomeGroup
                 && !e.IsRecurring
-                && e.Date != null)
+                && e.Date != null
+                && !(e.IsHomeGroupMeeting == false && e.MovedToDate != null))
             .Select(e => e.Date!.Value)
             .ToListAsync();
 
@@ -387,8 +390,9 @@ public class AttendanceController(AppDbContext db) : ControllerBase
                 && dates.Contains(e.Date!.Value))
             .ToListAsync();
 
+        // Manual cancellations only — exclude move-out shadows
         var cancelledFromSchedule = scheduleEvents
-            .Where(e => e.IsHomeGroupMeeting == false)
+            .Where(e => e.IsHomeGroupMeeting == false && e.MovedToDate == null)
             .Select(e => e.Date!.Value)
             .ToHashSet();
 
@@ -433,6 +437,7 @@ public class AttendanceController(AppDbContext db) : ControllerBase
                 && e.Type == CalendarEventType.HomeGroup
                 && !e.IsRecurring
                 && e.IsHomeGroupMeeting == false
+                && e.MovedToDate == null
                 && e.Date != null)
             .Select(e => e.Date!.Value)
             .ToListAsync();
