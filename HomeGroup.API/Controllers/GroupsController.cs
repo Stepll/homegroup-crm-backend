@@ -1027,10 +1027,15 @@ public class GroupsController(AppDbContext db) : ControllerBase
 
         if (nextMeetingStr != null && DateOnly.TryParse(nextMeetingStr, out var nextDate))
         {
-            // Cleanup stale past non-recurring booking events for this group
+            // Cleanup stale past non-recurring booking events for this group.
+            // KEEP schedule overrides (IsHomeGroupMeeting != null = real meeting or cancellation marker)
+            // and any event linked via MovedFromDate/MovedToDate.
             var staleBookings = await db.CalendarEvents
                 .Where(e => e.Type == CalendarEventType.HomeGroup && !e.IsRecurring
-                            && e.HomeGroupId == id && e.Date < today)
+                            && e.HomeGroupId == id && e.Date < today
+                            && e.IsHomeGroupMeeting == null
+                            && e.MovedFromDate == null
+                            && e.MovedToDate == null)
                 .ToListAsync();
             if (staleBookings.Count > 0)
             {
