@@ -341,13 +341,10 @@ public class AttendanceController(AppDbContext db) : ControllerBase
             .Select(e => e.Date!.Value)
             .ToListAsync();
 
-        var dbDates = dbDatesFromAttendance
-            .Union(dbDatesFromMeta)
-            .Union(dbDatesFromCalendar)
-            .OrderByDescending(d => d)
-            .ToList();
-
-        // Dates where the meeting was moved AWAY from — don't generate them as virtual columns
+        // Dates where the meeting was moved AWAY from — exclude from table entirely.
+        // Even if attendance/meta records still exist on the moved-out date (e.g., move done
+        // before moveAttendance feature existed), don't show that column — the meeting
+        // semantically happened on the destination date for that week.
         var movedOutDates = (await db.CalendarEvents
             .Where(e => e.HomeGroupId == groupId
                 && e.Type == CalendarEventType.HomeGroup
@@ -357,6 +354,13 @@ public class AttendanceController(AppDbContext db) : ControllerBase
                 && e.Date != null)
             .Select(e => e.Date!.Value)
             .ToListAsync()).ToHashSet();
+
+        var dbDates = dbDatesFromAttendance
+            .Union(dbDatesFromMeta)
+            .Union(dbDatesFromCalendar)
+            .Where(d => !movedOutDates.Contains(d))
+            .OrderByDescending(d => d)
+            .ToList();
 
         // Generate virtual dates based on group schedule to fill up to tableSize
         var allDates = new HashSet<DateOnly>(dbDates);
