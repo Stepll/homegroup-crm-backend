@@ -13,6 +13,6 @@ public record ScheduleWeekDto(
 
 public record ScheduleCancelRequest(string Date);
 
-public record ScheduleMoveRequest(string FromDate, string ToDate, bool MovePlan);
+public record ScheduleMoveRequest(string FromDate, string ToDate, bool MovePlan, bool MoveAttendance);
 
 public record ScheduleResetRequest(string WeekStart, bool RestorePlan);

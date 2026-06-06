@@ -167,6 +167,44 @@ static async Task MigrateLegacyScheduleData(AppDbContext db)
         group.NextMeetingOverrideDate = null;
     }
 
-    if (groups.Count > 0)
+    // Convert AttendanceMeta.IsCancelled to CalendarEvent (so Schedule page sees old cancellations)
+    var cancelledMetas = await db.AttendanceMetas
+        .Where(m => m.IsCancelled)
+        .ToListAsync();
+
+    var calendarKeys = await db.CalendarEvents
+        .Where(e => e.Type == HomeGroup.API.Models.Entities.CalendarEventType.HomeGroup
+            && !e.IsRecurring
+            && e.IsHomeGroupMeeting == false
+            && e.Date != null)
+        .Select(e => new { e.HomeGroupId, e.Date })
+        .ToListAsync();
+    var existingCancelKeys = calendarKeys
+        .Select(x => (x.HomeGroupId, x.Date!.Value))
+        .ToHashSet();
+
+    var groupNamesById = await db.HomeGroups.ToDictionaryAsync(g => g.Id, g => g.Name);
+
+    var addedAny = false;
+    foreach (var meta in cancelledMetas)
+    {
+        var key = (meta.HomeGroupId, meta.MeetingDate);
+        if (existingCancelKeys.Contains(key)) continue;
+        if (!groupNamesById.TryGetValue(meta.HomeGroupId, out var groupName)) continue;
+
+        db.CalendarEvents.Add(new HomeGroup.API.Models.Entities.CalendarEvent
+        {
+            Type = HomeGroup.API.Models.Entities.CalendarEventType.HomeGroup,
+            HomeGroupId = meta.HomeGroupId,
+            IsRecurring = false,
+            Date = meta.MeetingDate,
+            IsHomeGroupMeeting = false,
+            Title = groupName,
+        });
+        existingCancelKeys.Add(key);
+        addedAny = true;
+    }
+
+    if (groups.Count > 0 || addedAny)
         await db.SaveChangesAsync();
 }

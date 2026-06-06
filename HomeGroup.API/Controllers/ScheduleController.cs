@@ -58,7 +58,6 @@ public class ScheduleController(AppDbContext db) : ControllerBase
             .Select(g => new { Date = g.Key, Count = g.Count() })
             .ToListAsync();
         var attCountByDate = attCounts.ToDictionary(x => x.Date, x => x.Count);
-        var datesWithAttendance = new HashSet<DateOnly>(attCountByDate.Keys);
 
         var firstMonday = SnapToMonday(from);
         var weeks = new List<ScheduleWeekDto>();
@@ -106,21 +105,7 @@ public class ScheduleController(AppDbContext db) : ControllerBase
                     status = "cancelled";
                 }
             }
-            else
-            {
-                // No explicit override — infer from attendance records
-                var hasAttendanceOnDefault = datesWithAttendance.Contains(defaultDate);
-                var nonDefaultDay = Enumerable.Range(0, 7)
-                    .Select(i => weekStart.AddDays(i))
-                    .FirstOrDefault(d => d != defaultDate && datesWithAttendance.Contains(d));
-
-                if (!hasAttendanceOnDefault && nonDefaultDay != default)
-                {
-                    effectiveDate = nonDefaultDay.ToString("yyyy-MM-dd");
-                    status = "rescheduled_internal";
-                    movedFromDate = defaultDate.ToString("yyyy-MM-dd");
-                }
-            }
+            // No explicit override → status remains "default", effectiveDate = defaultDate
 
             var hasPlan = effectiveDate is not null && planSet.Contains(effectiveDate);
             var attCount = 0;
@@ -300,6 +285,37 @@ public class ScheduleController(AppDbContext db) : ControllerBase
                 plan.MeetingDate = toDateStr;
                 plan.OriginalMeetingDate ??= fromDateStr;
                 plan.UpdatedAt = DateTime.UtcNow;
+            }
+        }
+
+        // 4. Move attendance records (and meta) if requested — re-assign MeetingDate from → to
+        if (request.MoveAttendance)
+        {
+            var attendancesAtFrom = await db.Attendances
+                .Where(a => a.HomeGroupId == groupId && a.MeetingDate == fromDate)
+                .ToListAsync();
+
+            if (attendancesAtFrom.Count > 0)
+            {
+                // Remove any existing attendance at toDate to avoid unique-index conflicts
+                var attendancesAtTo = await db.Attendances
+                    .Where(a => a.HomeGroupId == groupId && a.MeetingDate == toDate)
+                    .ToListAsync();
+                db.Attendances.RemoveRange(attendancesAtTo);
+
+                foreach (var a in attendancesAtFrom)
+                    a.MeetingDate = toDate;
+            }
+
+            // Move meta too (guest count, notes)
+            var metaAtFrom = await db.AttendanceMetas
+                .FirstOrDefaultAsync(m => m.HomeGroupId == groupId && m.MeetingDate == fromDate);
+            if (metaAtFrom is not null)
+            {
+                var metaAtTo = await db.AttendanceMetas
+                    .FirstOrDefaultAsync(m => m.HomeGroupId == groupId && m.MeetingDate == toDate);
+                if (metaAtTo is not null) db.AttendanceMetas.Remove(metaAtTo);
+                metaAtFrom.MeetingDate = toDate;
             }
         }
 
