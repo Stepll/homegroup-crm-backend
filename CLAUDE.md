@@ -24,8 +24,11 @@ HomeGroup.API/
                                     :id/set-password (settings.admins) + me/dashboard GET/PUT)
     PersonStatusesController.cs  — /api/v1/person-statuses (CRUD)
     RolesController.cs           — /api/v1/roles (CRUD, system role protection)
-    AttendanceController.cs      — /api/v1/attendance (records + meta)
+    AttendanceController.cs      — /api/v1/attendance (records + meta + dates + dots)
     CalendarController.cs        — /api/v1/calendar (occurrences GET + events CRUD)
+    ScheduleController.cs        — /api/v1/groups/:id/schedule (per-week overrides:
+                                    GET weeks, cancel/uncancel, move (with plan + attendance),
+                                    reset-week)
     GoogleCalendarController.cs  — /api/v1/google-calendar/sync (manual Google sync)
     RoomsController.cs           — /api/v1/rooms (CRUD)
     PlanTemplatesController.cs   — /api/v1/plan-templates (global meeting templates)
@@ -69,10 +72,16 @@ HomeGroup.API/
       CalendarEvent.cs           — Id, Title, Description?, Location?, RoomId?,
                                    Type (Recurring|Global|HomeGroup|Google), HomeGroupId?,
                                    IsRecurring, RecurringDayOfWeek? (int, 0=Sun..6=Sat),
-                                   StartTime?, EndTime?, Date?, GoogleEventId?, CreatedAt
+                                   StartTime?, EndTime?, Date?, GoogleEventId?,
+                                   IsHomeGroupMeeting?, MovedFromDate?, MovedToDate?, CreatedAt
+                                   — MovedFromDate/MovedToDate = bidirectional links between
+                                     weeks for rescheduled meetings (see Schedule overrides)
       PlanTemplate.cs            — Id, Name, Blocks[], CreatedAt
       PlanTemplateBlock.cs       — Id, TemplateId, Order, Time, Title, Info?, Responsible?
-      HomeMeetingPlan.cs         — Id, HomeGroupId, MeetingDate, AppliedTemplateName?, Blocks[], UpdatedAt
+      HomeMeetingPlan.cs         — Id, HomeGroupId, MeetingDate, OriginalMeetingDate?,
+                                   AppliedTemplateName?, Blocks[], UpdatedAt
+                                   — OriginalMeetingDate set when plan was moved with a
+                                     rescheduled meeting; used to restore on Schedule reset
       MeetingPlanBlock.cs        — Id, PlanId, Order, Time, Title, Info?, Responsible?
     DTOs/
       Auth/AuthDtos.cs
@@ -125,12 +134,35 @@ Dockerfile
   - `PUT /people/:id` → при зміні `PrimaryGroupId` оновлює `HomeGroupMembers`
   - `PUT /groups/:id/members/sync` → при додаванні/видаленні членів оновлює `PrimaryGroupId` людей
 
-### Next Meeting Override
-`HomeGroupEntity.NextMeetingOverrideDate` (string?, "yyyy-MM-dd") — одноразове перевизначення дати наступної зустрічі:
-- Якщо встановлено і дата >= today → `GetCabinet` повертає її замість розрахованої по розкладу
-- Автоматично ігнорується якщо дата в минулому (не видаляється, просто не використовується)
-- `PUT /groups/:id/next-meeting` — встановлює override і опційно переміщає план зі старої дати на нову
-- `PUT /groups/:id/skip-meeting` — бекенд сам обчислює наступний коректний день тижня після поточної next meeting
+### Next Meeting Override (legacy)
+`HomeGroupEntity.NextMeetingOverrideDate` (string?, "yyyy-MM-dd") — застаріле поле, конвертується
+при старті в CalendarEvent override (`MigrateLegacyScheduleData` у `Program.cs`).
+- `PUT /groups/:id/next-meeting` (cabinet's "Перенести" button) ще працює, але створює
+  CalendarEvent override напряму без використання поля
+- `PUT /groups/:id/skip-meeting` — бекенд сам обчислює наступний коректний день тижня
+
+### Schedule Overrides (новий механізм)
+Перенос/скасування зустрічей живуть як non-recurring HomeGroup `CalendarEvent`:
+- `IsHomeGroupMeeting = true` + `Date = X` — реальна зустріч (override)
+- `IsHomeGroupMeeting = false` + `Date = X` — маркер скасування / "тінь" від переносу
+- `IsHomeGroupMeeting = null` — звичайне бронювання кімнати (не впливає на schedule)
+
+Bidirectional links через `MovedFromDate` / `MovedToDate`:
+- При переносі пт → чт: створюється real event на чт з `MovedFromDate=пт` + shadow event
+  на пт з `MovedToDate=чт`
+- При `reset-week` лінки використовуються щоб очистити обидва тижні разом
+
+`ScheduleController` (`/api/v1/groups/:id/schedule`):
+- `GET ?from=&to=` → `ScheduleWeekDto[]` (один запис на тиждень з status: default |
+  cancelled | rescheduled_internal | moved_in | moved_out + effectiveDate + movedFromDate/movedToDate +
+  hasPlan + attendanceRecordCount)
+- `POST /cancel { date }`, `DELETE /cancel?date=` — manual cancel/uncancel
+- `POST /move { fromDate, toDate, movePlan, moveAttendance }` — переміщення зустрічі
+  (опціонально з планом і записами відвідуваності)
+- `POST /reset-week { weekStart, restorePlan }` — повне очищення тижня (видаляє зв'язаний
+  тиждень якщо є; повертає план через `OriginalMeetingDate` якщо restorePlan=true)
+
+Permission: `groups.schedule.manage`
 
 ### AttendanceMeta
 `AttendanceMeta` — метаінформація про зустріч (окремо від per-person записів):
@@ -261,13 +293,28 @@ DELETE /api/v1/roles/:id   — заборонено для IsSystem=true
 ### Attendance
 ```
 GET  /api/v1/attendance             — ?groupId=&from=&to=
-GET  /api/v1/attendance/summary     — ?groupId=
+GET  /api/v1/attendance/summary     — ?groupId= → AttendanceSummary[] (per date)
+GET  /api/v1/attendance/dates       — ?groupId= → string[] (union of all known meeting
+                                      dates: Attendances + AttendanceMeta + CalendarEvent
+                                      real-meeting overrides, sorted desc)
 POST /api/v1/attendance             — { homeGroupId, meetingDate,
                                         entries: [{personId?, userId?, wasPresent}] }
-GET  /api/v1/attendance/meta        — ?groupId=&date= → { guestCount, guestInfo }
-POST /api/v1/attendance/meta        — { homeGroupId, meetingDate, guestCount, guestInfo? }
+POST /api/v1/attendance/bulk        — { homeGroupId, entries: [{date, personId?, userId?, wasPresent}] }
+GET  /api/v1/attendance/meta        — ?groupId=&date= → { guestCount, guestInfo, notes, isCancelled }
+POST /api/v1/attendance/meta        — { homeGroupId, meetingDate, guestCount, guestInfo?, notes?, isCancelled }
 GET  /api/v1/attendance/dots        — ?groupId=&limit=5 → AttendanceDotsResponse
-                                      фільтрує MeetingDate <= today (не включає майбутні зустрічі)
+                                      фільтрує MeetingDate <= today
+DELETE /api/v1/attendance/meeting   — ?groupId=&date= (тільки майбутні зустрічі)
+```
+
+### Schedule (per-group)
+```
+GET    /api/v1/groups/:id/schedule        — ?from=&to= → ScheduleWeekDto[]
+POST   /api/v1/groups/:id/schedule/cancel — { date } [groups.schedule.manage]
+DELETE /api/v1/groups/:id/schedule/cancel — ?date= [groups.schedule.manage]
+POST   /api/v1/groups/:id/schedule/move   — { fromDate, toDate, movePlan, moveAttendance }
+                                            [groups.schedule.manage]
+POST   /api/v1/groups/:id/schedule/reset-week — { weekStart, restorePlan } [groups.schedule.manage]
 ```
 
 ### Calendar
@@ -351,8 +398,35 @@ Admins в результаті мають `IsAdmin=true` і `UserId` (id юзе�
 ### Cabinet org team — roles
 `GetCabinet` включає `UserRoles.ThenInclude(Role)` для orgTeam і повертає першу роль як `CabinetRoleTag(Name, Color)`.
 
-### skip-meeting logic
-`ComputeNextMeeting` викликається з `currentNextDate` як `today` і `TimeOnly.MinValue` як `nowTime` — якщо поточна дата є днем зустрічі (daysUntil=0), функція повертає `today + 7`. Таким чином завжди повертається наступний коректний день тижня.
+### ComputeNextMeeting / ComputeLastMeeting
+Симетричні: в день зустрічі повертають today якщо meeting time ще не настав
+(або last=today якщо вже настав).
+- `ComputeNextMeeting`: повертає `today.AddDays(daysUntil)`. `daysUntil=0` означає сьогодні.
+  Якщо today=meeting day і `nowTime >= mt` → `daysUntil=7` (наступний тиждень).
+- `ComputeLastMeeting`: дзеркально — `daysAgo=0` сьогодні, `daysAgo=7` тиждень тому.
+
+### Cabinet stale-booking cleanup
+`GetCabinet` чистить ТІЛЬКИ minулі чисті кімнатні бронювання — `IsHomeGroupMeeting IS NULL`
+**і** немає `MovedFromDate`/`MovedToDate`. Schedule overrides і cancellation markers
+зберігаються вічно (без цього фікса cabinet був видаляв override-и при кожному відкритті).
+
+### Cancellation source of truth
+Скасування зустрічі живе в **двох** місцях: `AttendanceMeta.IsCancelled` (legacy) і
+CalendarEvent з `IsHomeGroupMeeting=false` (новий). Синхронізовані:
+- `SaveMeta` викликає `SyncCancellationToCalendar` при зміні `IsCancelled`
+- Schedule UI cancel → створює CalendarEvent напряму
+- `MigrateLegacyScheduleData` (Program.cs) одноразово створює CalendarEvent для всіх
+  існуючих `AttendanceMeta.IsCancelled=true` (idempotent — пропускає якщо вже є)
+
+GetSchedule / GetTable читають обидва джерела і об'єднують.
+
+### Move-out shadow vs manual cancellation
+CalendarEvent з `IsHomeGroupMeeting=false`:
+- Без `MovedToDate` → ручне скасування (відображається як жовтий стовпчик в таблиці)
+- З `MovedToDate` → "тінь" від переносу: зустріч відбулась в інший день того ж тижня
+
+В `GetTable` move-out shadows виключаються з усіх джерел (Attendances, Meta, Calendar)
+і з генерації віртуальних стовпчиків, щоб не показувати "примарний" пт коли зустріч була в чт.
 
 ### Ghost event suppression (CalendarController)
 Recurring HomeGroup events є "ghost" — прозорі події-шаблони. Ghost пригнічується якщо:
@@ -400,6 +474,16 @@ Recurring HomeGroup events є "ghost" — прозорі події-шаблон
 17. `AddGroupNotifSettings` — HomeGroupEntity.NotifSettingsJson (text nullable)
 18. `AddGroupNeeds` — GroupNeeds table (Id, HomeGroupId FK, SubjectName, Description, Status, CreatedAt)
 19. `AddGroupNeedPersonLink` — GroupNeed: PersonId? (FK → People), UserId? (FK → Users)
+20. `AddScheduleOverrides` — CalendarEvent: MovedFromDate?, MovedToDate? (DateOnly nullable)
+    + HomeMeetingPlan: OriginalMeetingDate? (text nullable)
+
+## Startup Data Migrations (Program.cs `MigrateLegacyScheduleData`)
+Запускається при старті після `Database.Migrate()`:
+- Конвертує застарілі `HomeGroupEntity.NextMeetingOverrideDate` (майбутні) в CalendarEvent
+  з `IsHomeGroupMeeting=true`, після чого зануляє поле
+- Створює CalendarEvent з `IsHomeGroupMeeting=false` для всіх існуючих
+  `AttendanceMeta.IsCancelled=true` що ще не мають парного маркера
+Обидві операції idempotent — пропускають якщо CalendarEvent вже існує.
 
 ## Development Commands
 
@@ -506,6 +590,20 @@ Nginx проксує на контейнер. SSL через Certbot + Let's Enc
         Mobile: кнопка "З групи" → picker-popup зі списком членів + пошук
         Desktop: antd Select з showSearch, lazy-load при відкритті модалки
         Якщо прив'язано — ім'я на картці стає посиланням → /people/:id або /admins/:id
+- [x] ScheduleController — `/api/v1/groups/:id/schedule` (GET weeks, cancel, move, reset-week)
+      [groups.schedule.manage] — новий механізм для переносу/скасування зустрічей за тижнями
+- [x] CalendarEvent.MovedFromDate + MovedToDate — bidirectional links між тижнями
+- [x] HomeMeetingPlan.OriginalMeetingDate — план повертається на оригінальну дату при reset-week
+- [x] Move endpoint опційно переносить Attendance + AttendanceMeta records разом з зустріччю
+- [x] Startup data migration — конвертує NextMeetingOverrideDate + AttendanceMeta.IsCancelled
+      в CalendarEvent overrides одноразово
+- [x] GetTable виключає move-out shadows з усіх джерел (attendance/meta/calendar) і з генерації
+      віртуальних стовпчиків — переїхані дні не показуються як примарні стовпчики
+- [x] GetCabinet stale-booking cleanup НЕ видаляє schedule overrides (IsHomeGroupMeeting != null
+      або MovedFromDate/MovedToDate set)
+- [x] ComputeNextMeeting fix — в день зустрічі повертає today якщо meeting time ще не настав
+      (раніше через ламаний тернарник завжди стрибав на наступний тиждень)
+- [x] GET /attendance/dates — union усіх відомих дат (Attendance + Meta + Calendar real-meetings)
 
 ## TODO
 
