@@ -1548,12 +1548,13 @@ public class GroupsController(AppDbContext db) : ControllerBase
 
         if (daysUntil == 0)
         {
-            // Today is the day — check if time has passed
+            // Today is the meeting day — if the meeting time has already passed, jump to next week.
+            // Otherwise, "next meeting" IS today.
             if (TimeOnly.TryParse(meetingTime, out var mt) && nowTime >= mt)
                 daysUntil = 7;
         }
 
-        return today.AddDays(daysUntil == 0 ? 7 : daysUntil);
+        return today.AddDays(daysUntil);
     }
 
     private static DateOnly? ComputeLastMeeting(string? meetingDay, string? meetingTime, DateOnly today, TimeOnly nowTime)
