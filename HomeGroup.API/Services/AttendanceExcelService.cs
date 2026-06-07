@@ -21,10 +21,9 @@ public class AttendanceExcelService(AppDbContext db)
     private const int RowGroupName = 1;
     private const int RowTotal = 2;
     private const int RowGuests = 5;
-    private const int RowOtherGroups = 6;
-    private const int RowNotes = 7;
-    private const int RowHeader = 9;
-    private const int RowFirstPerson = 10;
+    private const int RowNotes = 6;
+    private const int RowHeader = 8;
+    private const int RowFirstPerson = 9;
 
     private static readonly string[] DateFormats =
     {
@@ -117,11 +116,7 @@ public class AttendanceExcelService(AppDbContext db)
         ws.Cell(RowGuests, ColFullName).Value = "Нові / невіруючі / гості";
         ws.Range(RowGuests, ColPercent, RowGuests, ColJoinedAt).Style.Fill.BackgroundColor = XLColor.FromHtml("#93C5FD");
 
-        // Row 6: other groups
-        ws.Cell(RowOtherGroups, ColFullName).Value = "З інших домашок";
-        ws.Range(RowOtherGroups, ColPercent, RowOtherGroups, ColJoinedAt).Style.Fill.BackgroundColor = XLColor.FromHtml("#93C5FD");
-
-        // Row 7: notes
+        // Row 6: notes
         ws.Cell(RowNotes, ColFullName).Value = "Нотатки (тема, гості, перенос)";
         ws.Range(RowNotes, ColPercent, RowNotes, ColJoinedAt).Style.Fill.BackgroundColor = XLColor.FromHtml("#FEF3C7");
         ws.Row(RowNotes).Height = 60;
