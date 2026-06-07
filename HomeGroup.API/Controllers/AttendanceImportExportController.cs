@@ -39,12 +39,15 @@ public class AttendanceImportExportController(AppDbContext db, AttendanceExcelSe
 
     [HttpGet("template")]
     [RequirePermission("attendance.view")]
-    public async Task<IActionResult> Template([FromQuery] string groupIds)
+    public async Task<IActionResult> Template(
+        [FromQuery] string groupIds,
+        [FromQuery] DateOnly? from,
+        [FromQuery] DateOnly? to)
     {
         var ids = ParseIds(groupIds);
         if (ids.Length == 0) return BadRequest(new { message = "Не вказано групи" });
 
-        var bytes = await excel.Export(ids, from: null, to: null, isTemplate: true);
+        var bytes = await excel.Export(ids, from, to, isTemplate: true);
         var filename = $"attendance-template-{DateTime.UtcNow:yyyy-MM-dd}.xlsx";
         return File(bytes, XlsxMime, filename);
     }

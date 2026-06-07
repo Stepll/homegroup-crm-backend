@@ -34,6 +34,18 @@ public class AttendanceExcelService(AppDbContext db)
         "MM/dd/yyyy",
     };
 
+    private static readonly Dictionary<string, DayOfWeek> UkrDays = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["Понеділок"] = DayOfWeek.Monday,
+        ["Вівторок"] = DayOfWeek.Tuesday,
+        ["Середа"] = DayOfWeek.Wednesday,
+        ["Четвер"] = DayOfWeek.Thursday,
+        ["Пʼятниця"] = DayOfWeek.Friday,
+        ["П'ятниця"] = DayOfWeek.Friday,
+        ["Субота"] = DayOfWeek.Saturday,
+        ["Неділя"] = DayOfWeek.Sunday,
+    };
+
     // ============================================================
     // EXPORT
     // ============================================================
@@ -73,6 +85,10 @@ public class AttendanceExcelService(AppDbContext db)
         var ws = wb.Worksheets.Add(sheetName);
 
         var dates = await CollectDates(group.Id, from, to);
+
+        // Template + period: fill in recurring meeting dates so user has columns to write in.
+        if (isTemplate && from.HasValue && to.HasValue)
+            dates = MergeRecurringDates(dates, group, from.Value, to.Value, await GetMovedOutDates(group.Id));
         var (members, attendanceMap) = await CollectMembers(group.Id);
         var metas = await db.AttendanceMetas
             .Where(m => m.HomeGroupId == group.Id && (from == null || m.MeetingDate >= from) && (to == null || m.MeetingDate <= to))
@@ -243,6 +259,40 @@ public class AttendanceExcelService(AppDbContext db)
 
         ws.SheetView.FreezeRows(RowHeader);
         ws.SheetView.FreezeColumns(ColFullName);
+    }
+
+    private async Task<HashSet<DateOnly>> GetMovedOutDates(long groupId) =>
+        (await db.CalendarEvents
+            .Where(e => e.HomeGroupId == groupId
+                && e.Type == CalendarEventType.HomeGroup
+                && !e.IsRecurring
+                && e.IsHomeGroupMeeting == false
+                && e.MovedToDate != null
+                && e.Date != null)
+            .Select(e => e.Date!.Value)
+            .ToListAsync()).ToHashSet();
+
+    private static List<DateOnly> MergeRecurringDates(
+        List<DateOnly> existing,
+        HomeGroupEntity group,
+        DateOnly from,
+        DateOnly to,
+        HashSet<DateOnly> movedOut)
+    {
+        if (!UkrDays.TryGetValue(group.MeetingDay ?? "", out var dow))
+            return existing;
+        if (to < from) return existing;
+
+        var set = new HashSet<DateOnly>(existing);
+        var daysFwd = ((int)dow - (int)from.DayOfWeek + 7) % 7;
+        var candidate = from.AddDays(daysFwd);
+        while (candidate <= to)
+        {
+            if (!movedOut.Contains(candidate))
+                set.Add(candidate);
+            candidate = candidate.AddDays(7);
+        }
+        return set.OrderBy(d => d).ToList();
     }
 
     private async Task<List<DateOnly>> CollectDates(long groupId, DateOnly? from, DateOnly? to)
