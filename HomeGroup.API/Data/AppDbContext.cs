@@ -29,6 +29,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<GroupNeed> GroupNeeds => Set<GroupNeed>();
     public DbSet<GroupMemberHistory> GroupMemberHistories => Set<GroupMemberHistory>();
     public DbSet<UserActivity> UserActivities => Set<UserActivity>();
+    public DbSet<AttendanceImport> AttendanceImports => Set<AttendanceImport>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -262,6 +263,12 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             .HasOne(a => a.Author)
             .WithMany()
             .HasForeignKey(a => a.AuthorId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        modelBuilder.Entity<AttendanceImport>()
+            .HasOne(i => i.CreatedBy)
+            .WithMany()
+            .HasForeignKey(i => i.CreatedByUserId)
             .OnDelete(DeleteBehavior.SetNull);
 
         // Seed roles

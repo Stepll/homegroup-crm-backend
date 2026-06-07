@@ -307,6 +307,36 @@ GET  /api/v1/attendance/dots        — ?groupId=&limit=5 → AttendanceDotsResp
 DELETE /api/v1/attendance/meeting   — ?groupId=&date= (тільки майбутні зустрічі)
 ```
 
+### Attendance Import/Export (Excel)
+```
+GET  /api/v1/attendance/export       — ?groupIds=1,2,3&from=&to= → .xlsx (multi-sheet)
+GET  /api/v1/attendance/template     — ?groupIds=1,2,3 → .xlsx (структура з людьми, без даних)
+POST /api/v1/attendance/import/preview — multipart file → ImportPreviewResponse
+                                          [attendance.record]
+POST /api/v1/attendance/import/apply   — { importId, sheets: [...] } → ImportApplyResponse
+                                          [attendance.record]
+```
+
+Excel структура:
+- Cols: `% | ID(hidden) | ПІБ | Статус | Опіка | Дата приєднання | dates →`
+- Header rows: `groupName+dates | Загалом | empty | empty | Нові/невіруючі/гості |
+  З інших домашок | Нотатки | empty | header | people...`
+- Cell values: `1`=присутній, `0`=відсутній, `-`=скасована зустріч, порожньо=ще не приєднався/пішов
+- Past members: червоний фон, LeftAt з `GroupMemberHistory`
+- ID hint: `p:123`(Person) / `u:5`(User) — для round-trip matching
+
+Import logic:
+- Sheet → group: exact name → contains → leader name fuzzy
+- Person → match: ID hint → exact name in group → past members → unknown (з suggestions)
+- "Нові/гості" + "З інших домашок" суммуются в `AttendanceMeta.GuestCount`
+- Конфлікти: attendance value / cancellation / guests count / notes
+  Key: `(type, date, personRowIndex?)`. Default рішення = useFile.
+- LeftAt detection: остання непуста дата + ≥2 порожніх після неї → пропонується кандидат
+- Status / Oversight / JoinedAt / LeftAt — окремі тогли в `ImportSheetDecision`, default OFF
+- Pending preview зберігається в `AttendanceImports` (PayloadJson, ExpiresAt = +2h)
+- `ParsedSheet` records використовують string-keyed Dictionary (`yyyy-MM-dd`) щоб обійти
+  System.Text.Json не-підтримку `DateOnly` як ключа dict
+
 ### Schedule (per-group)
 ```
 GET    /api/v1/groups/:id/schedule        — ?from=&to= → ScheduleWeekDto[]
@@ -476,6 +506,8 @@ Recurring HomeGroup events є "ghost" — прозорі події-шаблон
 19. `AddGroupNeedPersonLink` — GroupNeed: PersonId? (FK → People), UserId? (FK → Users)
 20. `AddScheduleOverrides` — CalendarEvent: MovedFromDate?, MovedToDate? (DateOnly nullable)
     + HomeMeetingPlan: OriginalMeetingDate? (text nullable)
+21. `AddAttendanceImports` — AttendanceImports table (Id, CreatedByUserId? FK, PayloadJson text,
+    CreatedAt, ExpiresAt) — pending stage для двоетапного імпорту Excel
 
 ## Startup Data Migrations (Program.cs `MigrateLegacyScheduleData`)
 Запускається при старті після `Database.Migrate()`:
@@ -604,6 +636,15 @@ Nginx проксує на контейнер. SSL через Certbot + Let's Enc
 - [x] ComputeNextMeeting fix — в день зустрічі повертає today якщо meeting time ще не настав
       (раніше через ламаний тернарник завжди стрибав на наступний тиждень)
 - [x] GET /attendance/dates — union усіх відомих дат (Attendance + Meta + Calendar real-meetings)
+- [x] Attendance Excel import/export — `/attendance/export`, `/template`, `/import/preview`, `/import/apply`
+      ClosedXML, multi-sheet (sheet per group), hidden ID column для round-trip matching.
+      Двоетапний імпорт: preview (зберігається в `AttendanceImports` table, ExpiresAt=+2h) →
+      apply з рішеннями по конфліктах (`(type, date, personRowIndex?)` key).
+      Конфлікти: attendance value / cancellation / guests / notes.
+      "Нові/гості" + "З інших домашок" → суммуются в `GuestCount`.
+      LeftAt detection — остання непуста дата + ≥2 порожніх після.
+      Status/Oversight/JoinedAt/LeftAt — окремі тогли в decision (default OFF).
+      Past members з `GroupMemberHistory.LeftAt` → червоний рядок в експорті.
 
 ## TODO
 
