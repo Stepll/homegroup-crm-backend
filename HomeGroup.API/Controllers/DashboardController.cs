@@ -109,10 +109,18 @@ public class DashboardController(AppDbContext db) : ControllerBase
         else if (visibleGroupIds is not null)
             personsQuery = personsQuery.Where(p => p.PrimaryGroupId != null && visibleGroupIds.Contains(p.PrimaryGroupId.Value));
 
-        var persons = await personsQuery.ToListAsync();
+        var adminsQuery = db.Users.Include(u => u.PersonStatus).Where(u => u.Id != 0).AsQueryable();
+        if (groupId.HasValue)
+            adminsQuery = adminsQuery.Where(u => u.PrimaryGroupId == groupId.Value);
+        else if (visibleGroupIds is not null)
+            adminsQuery = adminsQuery.Where(u => u.PrimaryGroupId != null && visibleGroupIds.Contains(u.PrimaryGroupId.Value));
 
-        var grouped = persons
-            .GroupBy(p => new { p.PersonStatusId, Name = p.PersonStatus?.Name, Color = p.PersonStatus?.Color })
+        var persons = await personsQuery.Select(p => new { p.PersonStatusId, Status = p.PersonStatus }).ToListAsync();
+        var admins = await adminsQuery.Select(u => new { u.PersonStatusId, Status = u.PersonStatus }).ToListAsync();
+        var combined = persons.Concat(admins).ToList();
+
+        var grouped = combined
+            .GroupBy(x => new { x.PersonStatusId, Name = x.Status?.Name, Color = x.Status?.Color })
             .Select(g => new StatusDistributionItem(
                 g.Key.PersonStatusId,
                 g.Key.Name ?? "Без статусу",
@@ -121,7 +129,7 @@ public class DashboardController(AppDbContext db) : ControllerBase
             .OrderByDescending(i => i.Count)
             .ToList();
 
-        return Ok(new StatusDistributionResponse(persons.Count, grouped));
+        return Ok(new StatusDistributionResponse(combined.Count, grouped));
     }
 
     // ── Groups comparison (порівняння домашок) ─────────────────────────────────
