@@ -56,3 +56,25 @@ public record CustomFieldDto(long Id, string Name, string? Value);
 public record CreateCustomFieldRequest(string Name);
 
 public record UpdateCustomFieldRequest(string? Value);
+
+public record ConvertToAdminPreview(
+    long Id,
+    string Name,
+    string? LastName,
+    string? Email,
+    bool EmailAvailable,
+    long? PrimaryGroupId,
+    string? PrimaryGroupName,
+    int AttendanceCount,
+    int CustomFieldValueCount,
+    int ActivityCount,
+    int GroupNeedCount,
+    int GroupMembershipCount,
+    int GroupMemberHistoryCount);
+
+public record ConvertToAdminRequest(
+    string Email,
+    string Password,
+    List<long> RoleIds,
+    long? PrimaryGroupId,
+    List<long> VisibleGroupIds);

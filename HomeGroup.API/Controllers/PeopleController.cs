@@ -426,4 +426,164 @@ public class PeopleController(AppDbContext db) : ControllerBase
             f.Id, f.Name,
             values.FirstOrDefault(v => v.FieldId == f.Id)?.Value)).ToList();
     }
+
+    // ── Convert Person → Admin ────────────────────────────────────────────────
+
+    [HttpGet("{id}/convert-to-admin/preview")]
+    [RequirePermission("people.convertToAdmin")]
+    public async Task<ActionResult<ConvertToAdminPreview>> ConvertPreview(long id)
+    {
+        var person = await db.People
+            .Include(p => p.PrimaryGroup)
+            .FirstOrDefaultAsync(p => p.Id == id);
+        if (person is null) return NotFound();
+
+        var emailAvailable = string.IsNullOrWhiteSpace(person.Email)
+            || !await db.Users.AnyAsync(u => u.Email == person.Email);
+
+        var attendanceCount = await db.Attendances.CountAsync(a => a.PersonId == id);
+        var customFieldCount = await db.PersonCustomFieldValues.CountAsync(v => v.PersonId == id);
+        var activityCount = await db.PersonActivities.CountAsync(a => a.PersonId == id);
+        var groupNeedCount = await db.GroupNeeds.CountAsync(n => n.PersonId == id);
+        var membershipCount = await db.HomeGroupMembers.CountAsync(m => m.PersonId == id);
+        var historyCount = await db.GroupMemberHistories.CountAsync(h => h.PersonId == id);
+
+        return Ok(new ConvertToAdminPreview(
+            person.Id, person.Name, person.LastName, person.Email,
+            emailAvailable,
+            person.PrimaryGroupId, person.PrimaryGroup?.Name,
+            attendanceCount, customFieldCount, activityCount,
+            groupNeedCount, membershipCount, historyCount));
+    }
+
+    [HttpPost("{id}/convert-to-admin")]
+    [RequirePermission("people.convertToAdmin")]
+    public async Task<ActionResult<long>> ConvertToAdmin(long id, ConvertToAdminRequest request)
+    {
+        var person = await db.People.FirstOrDefaultAsync(p => p.Id == id);
+        if (person is null) return NotFound();
+
+        if (string.IsNullOrWhiteSpace(request.Email))
+            return BadRequest(new { message = "Email обов'язковий" });
+        if (string.IsNullOrWhiteSpace(request.Password) || request.Password.Length < 6)
+            return BadRequest(new { message = "Пароль мінімум 6 символів" });
+        if (request.RoleIds is null || request.RoleIds.Count == 0)
+            return BadRequest(new { message = "Виберіть хоча б одну роль" });
+        if (await db.Users.AnyAsync(u => u.Email == request.Email))
+            return Conflict(new { message = "Адмін з таким email вже існує" });
+
+        await using var tx = await db.Database.BeginTransactionAsync();
+
+        var user = new User
+        {
+            Email = request.Email.Trim(),
+            PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.Password),
+            Name = person.Name,
+            LastName = person.LastName,
+            Phone = person.Phone,
+            Telegram = person.Telegram,
+            Notes = person.Notes,
+            Gender = person.Gender,
+            MaritalStatus = person.MaritalStatus,
+            Address = person.Address,
+            DateOfBirth = person.DateOfBirth,
+            IsBaptized = person.IsBaptized,
+            Church = person.Church,
+            Ministry = person.Ministry,
+            IsBaptizedWithSpirit = person.IsBaptizedWithSpirit,
+            PersonStatusId = person.PersonStatusId,
+            PrimaryGroupId = request.PrimaryGroupId ?? person.PrimaryGroupId,
+            CreatedAt = person.CreatedAt,
+        };
+        db.Users.Add(user);
+        await db.SaveChangesAsync();
+
+        foreach (var roleId in request.RoleIds.Distinct())
+            db.UserRoles.Add(new UserRole { UserId = user.Id, RoleId = roleId });
+        foreach (var gid in request.VisibleGroupIds.Distinct())
+            db.UserHomeGroups.Add(new UserHomeGroup { UserId = user.Id, HomeGroupId = gid });
+
+        // Migrate Attendance: PersonId → UserId
+        var attendances = await db.Attendances.Where(a => a.PersonId == id).ToListAsync();
+        foreach (var a in attendances)
+        {
+            a.PersonId = null;
+            a.UserId = user.Id;
+        }
+
+        // Migrate GroupNeed
+        var needs = await db.GroupNeeds.Where(n => n.PersonId == id).ToListAsync();
+        foreach (var n in needs)
+        {
+            n.PersonId = null;
+            n.UserId = user.Id;
+        }
+
+        // Migrate GroupMemberHistory
+        var history = await db.GroupMemberHistories.Where(h => h.PersonId == id).ToListAsync();
+        foreach (var h in history)
+        {
+            h.PersonId = null;
+            h.UserId = user.Id;
+        }
+
+        // Migrate custom field values → UserCustomFieldValue
+        var pcfv = await db.PersonCustomFieldValues.Where(v => v.PersonId == id).ToListAsync();
+        foreach (var v in pcfv)
+        {
+            db.UserCustomFieldValues.Add(new UserCustomFieldValue
+            {
+                UserId = user.Id,
+                FieldId = v.FieldId,
+                Value = v.Value,
+            });
+        }
+        db.PersonCustomFieldValues.RemoveRange(pcfv);
+
+        // Migrate PersonActivity → UserActivity
+        var activities = await db.PersonActivities.Where(a => a.PersonId == id).ToListAsync();
+        foreach (var a in activities)
+        {
+            db.UserActivities.Add(new UserActivity
+            {
+                UserId = user.Id,
+                Type = a.Type,
+                Content = a.Content,
+                AuthorId = a.AuthorId,
+                OldStatusId = a.OldStatusId,
+                OldStatusName = a.OldStatusName,
+                OldStatusColor = a.OldStatusColor,
+                NewStatusId = a.NewStatusId,
+                NewStatusName = a.NewStatusName,
+                NewStatusColor = a.NewStatusColor,
+                OldValue = a.OldValue,
+                NewValue = a.NewValue,
+                CreatedAt = a.CreatedAt,
+            });
+        }
+        db.PersonActivities.RemoveRange(activities);
+
+        // Delete HomeGroupMembers — admin membership is via PrimaryGroupId
+        var memberships = await db.HomeGroupMembers.Where(m => m.PersonId == id).ToListAsync();
+        db.HomeGroupMembers.RemoveRange(memberships);
+
+        await db.SaveChangesAsync();
+
+        // Mark conversion in activity
+        long.TryParse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value, out var actorId);
+        db.UserActivities.Add(new UserActivity
+        {
+            UserId = user.Id,
+            Type = "person_converted",
+            AuthorId = actorId == 0 ? null : actorId,
+            NewValue = $"{person.Name}{(person.LastName is null ? "" : " " + person.LastName)}",
+        });
+
+        // Delete Person (other Person.OversightInfo text refs remain as text; FK refs were to User already)
+        db.People.Remove(person);
+        await db.SaveChangesAsync();
+
+        await tx.CommitAsync();
+        return Ok(user.Id);
+    }
 }

@@ -4,6 +4,7 @@ using HomeGroup.API.Authorization;
 using HomeGroup.API.Data;
 using HomeGroup.API.Models.DTOs.Admins;
 using HomeGroup.API.Models.DTOs.Groups;
+using HomeGroup.API.Models.DTOs.People;
 using HomeGroup.API.Models.DTOs.PersonStatuses;
 using HomeGroup.API.Models.Entities;
 using Microsoft.AspNetCore.Authorization;
@@ -25,7 +26,7 @@ public class AdminsController(AppDbContext db) : ControllerBase
 
         var admin = await LoadAdmin(userId);
         if (admin is null) return NotFound();
-        return Ok(ToResponse(admin));
+        return Ok(await ToResponseWithFields(admin));
     }
 
     [HttpGet]
@@ -39,7 +40,9 @@ public class AdminsController(AppDbContext db) : ControllerBase
             .OrderBy(u => u.Name)
             .ToListAsync();
 
-        return Ok(admins.Select(ToResponse));
+        var result = new List<AdminResponse>();
+        foreach (var a in admins) result.Add(await ToResponseWithFields(a));
+        return Ok(result);
     }
 
     [HttpGet("{id:long}")]
@@ -49,10 +52,11 @@ public class AdminsController(AppDbContext db) : ControllerBase
             .Include(u => u.UserRoles).ThenInclude(ur => ur.Role)
             .Include(u => u.PrimaryGroup)
             .Include(u => u.UserHomeGroups).ThenInclude(ug => ug.HomeGroup)
+            .Include(u => u.PersonStatus)
             .FirstOrDefaultAsync(u => u.Id == id);
 
         if (admin is null) return NotFound();
-        return Ok(ToResponse(admin));
+        return Ok(await ToResponseWithFields(admin));
     }
 
     [HttpPost]
@@ -78,7 +82,7 @@ public class AdminsController(AppDbContext db) : ControllerBase
         await SyncVisibleGroups(admin.Id, request.VisibleGroupIds);
 
         var created = await LoadAdmin(admin.Id);
-        return CreatedAtAction(nameof(GetById), new { id = admin.Id }, ToResponse(created!));
+        return CreatedAtAction(nameof(GetById), new { id = admin.Id }, await ToResponseWithFields(created!));
     }
 
     [HttpPut("{id:long}")]
@@ -101,7 +105,7 @@ public class AdminsController(AppDbContext db) : ControllerBase
         await SyncVisibleGroups(id, request.VisibleGroupIds);
 
         var updated = await LoadAdmin(id);
-        return Ok(ToResponse(updated!));
+        return Ok(await ToResponseWithFields(updated!));
     }
 
     [HttpPut("{id:long}/profile")]
@@ -151,7 +155,7 @@ public class AdminsController(AppDbContext db) : ControllerBase
         }
 
         var updated = await LoadAdmin(id);
-        return Ok(ToResponse(updated!));
+        return Ok(await ToResponseWithFields(updated!));
     }
 
     [HttpPost("me/set-password")]
@@ -349,28 +353,182 @@ public class AdminsController(AppDbContext db) : ControllerBase
         t.CreatedBy is null ? null : $"{t.CreatedBy.Name}{(t.CreatedBy.LastName is null ? "" : " " + t.CreatedBy.LastName)}",
         t.CreatedAt);
 
-    private static AdminResponse ToResponse(User u) => new(
-        u.Id,
-        u.Name,
-        u.LastName,
-        u.Email,
-        u.UserRoles.OrderBy(ur => ur.Role.Name).Select(ur => new RoleTagDto(ur.RoleId, ur.Role.Name, ur.Role.Color)).ToList(),
-        u.PrimaryGroupId,
-        u.PrimaryGroup?.Name,
-        u.PrimaryGroup?.Color,
-        u.UserHomeGroups.OrderBy(ug => ug.HomeGroup.Name).Select(ug => new GroupTagDto(ug.HomeGroupId, ug.HomeGroup.Name, ug.HomeGroup.Color)).ToList(),
-        u.CreatedAt,
-        u.Phone,
-        u.Telegram,
-        u.Notes,
-        u.Gender,
-        u.MaritalStatus,
-        u.Address,
-        u.DateOfBirth?.ToString("yyyy-MM-dd"),
-        u.IsBaptized,
-        u.Church,
-        u.Ministry,
-        u.IsBaptizedWithSpirit,
-        u.PersonStatus is null ? null : new PersonStatusDto(u.PersonStatus.Id, u.PersonStatus.Name, u.PersonStatus.Color)
-    );
+    private async Task<AdminResponse> ToResponseWithFields(User u)
+    {
+        var customFields = await GetCustomFields(u.Id, u.PrimaryGroupId);
+        return new AdminResponse(
+            u.Id,
+            u.Name,
+            u.LastName,
+            u.Email,
+            u.UserRoles.OrderBy(ur => ur.Role.Name).Select(ur => new RoleTagDto(ur.RoleId, ur.Role.Name, ur.Role.Color)).ToList(),
+            u.PrimaryGroupId,
+            u.PrimaryGroup?.Name,
+            u.PrimaryGroup?.Color,
+            u.UserHomeGroups.OrderBy(ug => ug.HomeGroup.Name).Select(ug => new GroupTagDto(ug.HomeGroupId, ug.HomeGroup.Name, ug.HomeGroup.Color)).ToList(),
+            u.CreatedAt,
+            u.Phone,
+            u.Telegram,
+            u.Notes,
+            u.Gender,
+            u.MaritalStatus,
+            u.Address,
+            u.DateOfBirth?.ToString("yyyy-MM-dd"),
+            u.IsBaptized,
+            u.Church,
+            u.Ministry,
+            u.IsBaptizedWithSpirit,
+            u.PersonStatus is null ? null : new PersonStatusDto(u.PersonStatus.Id, u.PersonStatus.Name, u.PersonStatus.Color),
+            customFields
+        );
+    }
+
+    private async Task<List<CustomFieldDto>> GetCustomFields(long userId, long? primaryGroupId)
+    {
+        if (!primaryGroupId.HasValue) return [];
+
+        var fields = await db.HomeGroupCustomFields
+            .Where(f => f.HomeGroupId == primaryGroupId.Value)
+            .OrderBy(f => f.CreatedAt)
+            .ToListAsync();
+
+        var fieldIds = fields.Select(f => f.Id).ToList();
+        var values = await db.UserCustomFieldValues
+            .Where(v => v.UserId == userId && fieldIds.Contains(v.FieldId))
+            .ToListAsync();
+
+        return fields.Select(f => new CustomFieldDto(
+            f.Id, f.Name,
+            values.FirstOrDefault(v => v.FieldId == f.Id)?.Value)).ToList();
+    }
+
+    // ── Activity ──────────────────────────────────────────────────────────────
+
+    [HttpGet("{id:long}/activity")]
+    [RequirePermission("admins.viewProfiles")]
+    public async Task<ActionResult<List<PersonActivityDto>>> GetActivity(long id)
+    {
+        if (!await db.Users.AnyAsync(u => u.Id == id)) return NotFound();
+
+        var entries = await db.UserActivities
+            .Include(a => a.Author)
+            .Where(a => a.UserId == id)
+            .OrderByDescending(a => a.CreatedAt)
+            .ToListAsync();
+
+        return Ok(entries.Select(a => new PersonActivityDto(
+            a.Id,
+            a.Type,
+            a.Content,
+            a.AuthorId,
+            a.Author is null ? null : $"{a.Author.Name}{(a.Author.LastName is null ? "" : " " + a.Author.LastName)}",
+            a.OldStatusId is null && a.OldStatusName is null ? null : new PersonStatusDto(a.OldStatusId ?? 0, a.OldStatusName ?? "", a.OldStatusColor ?? "#888"),
+            a.NewStatusId is null && a.NewStatusName is null ? null : new PersonStatusDto(a.NewStatusId ?? 0, a.NewStatusName ?? "", a.NewStatusColor ?? "#888"),
+            a.OldValue,
+            a.NewValue,
+            a.CreatedAt)).ToList());
+    }
+
+    [HttpPost("{id:long}/comments")]
+    [RequirePermission("admins.viewProfiles")]
+    public async Task<ActionResult<PersonActivityDto>> AddComment(long id, AddPersonCommentRequest request)
+    {
+        if (!await db.Users.AnyAsync(u => u.Id == id)) return NotFound();
+
+        if (string.IsNullOrWhiteSpace(request.Content))
+            return BadRequest(new { message = "Коментар не може бути порожнім" });
+
+        long.TryParse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value, out var authorId);
+
+        var entry = new UserActivity
+        {
+            UserId = id,
+            Type = "comment",
+            Content = request.Content.Trim(),
+            AuthorId = authorId == 0 ? null : authorId,
+        };
+        db.UserActivities.Add(entry);
+        await db.SaveChangesAsync();
+        await db.Entry(entry).Reference(a => a.Author).LoadAsync();
+
+        return Ok(new PersonActivityDto(
+            entry.Id,
+            entry.Type,
+            entry.Content,
+            entry.AuthorId,
+            entry.Author is null ? null : $"{entry.Author.Name}{(entry.Author.LastName is null ? "" : " " + entry.Author.LastName)}",
+            null, null, null, null,
+            entry.CreatedAt));
+    }
+
+    [HttpDelete("{id:long}/activity/{entryId:long}")]
+    [RequirePermission("admins.viewProfiles")]
+    public async Task<IActionResult> DeleteActivity(long id, long entryId)
+    {
+        var entry = await db.UserActivities
+            .FirstOrDefaultAsync(a => a.Id == entryId && a.UserId == id && a.Type == "comment");
+        if (entry is null) return NotFound();
+        db.UserActivities.Remove(entry);
+        await db.SaveChangesAsync();
+        return NoContent();
+    }
+
+    // ── Custom fields (definitions on PrimaryGroup, values per-user) ──────────
+
+    [HttpPost("{id:long}/custom-fields")]
+    [RequirePermission("people.customFields")]
+    public async Task<ActionResult<CustomFieldDto>> AddCustomField(long id, CreateCustomFieldRequest request)
+    {
+        var admin = await db.Users.FindAsync(id);
+        if (admin is null) return NotFound();
+        if (!admin.PrimaryGroupId.HasValue)
+            return BadRequest(new { message = "Адмін не прив'язаний до домашньої групи" });
+
+        var field = new HomeGroupCustomField
+        {
+            HomeGroupId = admin.PrimaryGroupId.Value,
+            Name = request.Name.Trim(),
+        };
+        db.HomeGroupCustomFields.Add(field);
+        await db.SaveChangesAsync();
+
+        return Ok(new CustomFieldDto(field.Id, field.Name, null));
+    }
+
+    [HttpPut("{id:long}/custom-fields/{fieldId:long}")]
+    [RequirePermission("people.customFields")]
+    public async Task<ActionResult<CustomFieldDto>> UpdateCustomField(long id, long fieldId, UpdateCustomFieldRequest request)
+    {
+        if (!await db.Users.AnyAsync(u => u.Id == id)) return NotFound();
+
+        var field = await db.HomeGroupCustomFields.FindAsync(fieldId);
+        if (field is null) return NotFound();
+
+        var value = await db.UserCustomFieldValues
+            .FirstOrDefaultAsync(v => v.UserId == id && v.FieldId == fieldId);
+
+        if (value is null)
+        {
+            value = new UserCustomFieldValue { UserId = id, FieldId = fieldId };
+            db.UserCustomFieldValues.Add(value);
+        }
+        value.Value = request.Value?.Trim();
+
+        await db.SaveChangesAsync();
+        return Ok(new CustomFieldDto(field.Id, field.Name, value.Value));
+    }
+
+    [HttpDelete("{id:long}/custom-fields/{fieldId:long}")]
+    [RequirePermission("people.customFields")]
+    public async Task<IActionResult> DeleteCustomField(long id, long fieldId)
+    {
+        if (!await db.Users.AnyAsync(u => u.Id == id)) return NotFound();
+
+        var field = await db.HomeGroupCustomFields.FindAsync(fieldId);
+        if (field is null) return NotFound();
+
+        db.HomeGroupCustomFields.Remove(field);
+        await db.SaveChangesAsync();
+        return NoContent();
+    }
 }

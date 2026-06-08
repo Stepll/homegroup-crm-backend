@@ -19,9 +19,10 @@ HomeGroup.API/
     AuthController.cs            — /api/v1/auth (login)
     GroupsController.cs          — /api/v1/groups (CRUD + members + custom fields +
                                     cabinet + events + plans + stats + stats/all + next-meeting + needs)
-    PeopleController.cs          — /api/v1/people (CRUD + custom field values)
+    PeopleController.cs          — /api/v1/people (CRUD + custom field values + activity + convert-to-admin)
     AdminsController.cs          — /api/v1/admins (CRUD + profile + me/set-password (no perm) +
-                                    :id/set-password (settings.admins) + me/dashboard GET/PUT)
+                                    :id/set-password (settings.admins) + me/dashboard GET/PUT +
+                                    activity GET/POST/DELETE + custom-fields POST/PUT/DELETE)
     PersonStatusesController.cs  — /api/v1/person-statuses (CRUD)
     RolesController.cs           — /api/v1/roles (CRUD, system role protection)
     AttendanceController.cs      — /api/v1/attendance (records + meta + dates + dots)
@@ -64,6 +65,10 @@ HomeGroup.API/
       AttendanceMeta.cs          — Id, HomeGroupId, MeetingDate, GuestCount, GuestInfo?
       HomeGroupCustomField.cs    — Id, HomeGroupId, Name, CreatedAt
       PersonCustomFieldValue.cs  — Id, PersonId, FieldId, Value
+      UserCustomFieldValue.cs    — Id, UserId, FieldId, Value (admin counterpart)
+      UserActivity.cs            — Id, UserId, Type ("comment"|"status_change"|
+                                   "oversight_change"|"person_converted"), Content?,
+                                   AuthorId?, status/value inline fields, CreatedAt
       GroupEvent.cs              — Id, HomeGroupId, Name, Month, Day, Year?, CreatedAt
       GroupNeed.cs               — Id, HomeGroupId, SubjectName, Description,
                                    Status (active|answered|irrelevant),
@@ -213,6 +218,18 @@ POST   /api/v1/people/:id/comments             — { content } → PersonActivit
 POST   /api/v1/people/:id/custom-fields
 PUT    /api/v1/people/:id/custom-fields/:fieldId
 DELETE /api/v1/people/:id/custom-fields/:fieldId
+
+GET    /api/v1/people/:id/convert-to-admin/preview
+                                               → ConvertToAdminPreview (counts of what migrates)
+                                               [people.convertToAdmin]
+POST   /api/v1/people/:id/convert-to-admin     — { email, password, roleIds[], primaryGroupId?, visibleGroupIds[] }
+                                               → newAdminId (long) [people.convertToAdmin]
+                                               Transaction: creates User з усіх профільних полів,
+                                               мігрує Attendance/GroupNeeds/GroupMemberHistory
+                                               (PersonId→UserId), копіює PersonCustomFieldValue→
+                                               UserCustomFieldValue + PersonActivity→UserActivity,
+                                               видаляє HomeGroupMembers + Person. Логує
+                                               UserActivity з Type="person_converted".
 ```
 
 ### Admins
@@ -222,7 +239,7 @@ POST   /api/v1/admins/me/set-password         — { newPassword } — БЕЗ Req
 GET    /api/v1/admins/me/dashboard             → WidgetConfig[] (конфіг дашборду поточного юзера)
 PUT    /api/v1/admins/me/dashboard             — { config: WidgetConfig[] } → 204
 GET    /api/v1/admins                          → AdminResponse[] [settings.admins]
-GET    /api/v1/admins/:id                      → AdminResponse
+GET    /api/v1/admins/:id                      → AdminResponse (з customFields)
 POST   /api/v1/admins                          — { name, lastName?, email, password, roleIds[], primaryGroupId?, visibleGroupIds[] } [settings.admins]
 PUT    /api/v1/admins/:id                      — { name, lastName?, email, roleIds[], primaryGroupId?, visibleGroupIds[] } [settings.admins]
 PUT    /api/v1/admins/:id/profile              — { phone?, telegram?, gender?, maritalStatus?, address?,
@@ -230,6 +247,15 @@ PUT    /api/v1/admins/:id/profile              — { phone?, telegram?, gender?,
                                                    isBaptizedWithSpirit, personStatusId? }
 POST   /api/v1/admins/:id/set-password        — { newPassword } [settings.admins]
 DELETE /api/v1/admins/:id                      [settings.admins]
+
+GET    /api/v1/admins/:id/activity             → PersonActivityDto[] [admins.viewProfiles]
+POST   /api/v1/admins/:id/comments             — { content } → PersonActivityDto [admins.viewProfiles]
+DELETE /api/v1/admins/:id/activity/:entryId    [admins.viewProfiles]
+
+POST   /api/v1/admins/:id/custom-fields        — { name } [people.customFields]
+                                                 створює HomeGroupCustomField в адміновій PrimaryGroup
+PUT    /api/v1/admins/:id/custom-fields/:fieldId — { value } → upsert UserCustomFieldValue [people.customFields]
+DELETE /api/v1/admins/:id/custom-fields/:fieldId [people.customFields]
 ```
 
 **Dashboard config**: `WidgetConfig[] = [{id: string, enabled: bool}]` — зберігається в `User.DashboardConfigJson` як text.
@@ -517,6 +543,10 @@ Recurring HomeGroup events є "ghost" — прозорі події-шаблон
     + HomeMeetingPlan: OriginalMeetingDate? (text nullable)
 21. `AddAttendanceImports` — AttendanceImports table (Id, CreatedByUserId? FK, PayloadJson text,
     CreatedAt, ExpiresAt) — pending stage для двоетапного імпорту Excel
+22. `AddUserActivityFieldsAndUserCustomFieldValues` —
+    + UserActivities: Content, OldValue, NewValue (nullable text)
+    + UserCustomFieldValues table (Id, UserId FK, FieldId FK, Value?) для адмінських значень
+    кастомних полів. Unique (UserId, FieldId).
 
 ## Startup Data Migrations (Program.cs `MigrateLegacyScheduleData`)
 Запускається при старті після `Database.Migrate()`:
@@ -658,6 +688,20 @@ Nginx проксує на контейнер. SSL через Certbot + Let's Enc
 - [x] Template + period → генерує колонку на кожний `MeetingDay` в діапазоні через
       `MergeRecurringDates` (move-out shadows виключаються). Дозволяє юзеру одразу мати
       бланк на backfill-період.
+- [x] Convert Person → Admin — `POST /people/:id/convert-to-admin` [people.convertToAdmin].
+      Транзакція: створює User з усіх профільних полів Person, мігрує Attendance/
+      GroupNeeds/GroupMemberHistory (PersonId→UserId), копіює PersonCustomFieldValue→
+      UserCustomFieldValue + PersonActivity→UserActivity, видаляє HomeGroupMembers +
+      Person. Логує `UserActivity` з Type="person_converted".
+      Preview endpoint `GET /people/:id/convert-to-admin/preview` для UI попередження
+      (counts + email availability).
+      Втрачається: Person.OversightUserId (адмін не має оверсайта).
+- [x] Admin activity feed — `GET/POST/DELETE /admins/:id/activity`, `POST /admins/:id/comments`
+      [admins.viewProfiles]. UserActivity entity розширено Content/OldValue/NewValue.
+- [x] Admin custom fields — `POST/PUT/DELETE /admins/:id/custom-fields[/:fieldId]`
+      [people.customFields]. Definitions reuse `HomeGroupCustomField` (per-group), values
+      live в новій `UserCustomFieldValue` table (UserId, FieldId, Value).
+      `AdminResponse` тепер містить `customFields`.
 
 ## TODO
 

@@ -29,6 +29,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<GroupNeed> GroupNeeds => Set<GroupNeed>();
     public DbSet<GroupMemberHistory> GroupMemberHistories => Set<GroupMemberHistory>();
     public DbSet<UserActivity> UserActivities => Set<UserActivity>();
+    public DbSet<UserCustomFieldValue> UserCustomFieldValues => Set<UserCustomFieldValue>();
     public DbSet<AttendanceImport> AttendanceImports => Set<AttendanceImport>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -264,6 +265,22 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             .WithMany()
             .HasForeignKey(a => a.AuthorId)
             .OnDelete(DeleteBehavior.SetNull);
+
+        modelBuilder.Entity<UserCustomFieldValue>()
+            .HasOne(v => v.User)
+            .WithMany()
+            .HasForeignKey(v => v.UserId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<UserCustomFieldValue>()
+            .HasOne(v => v.Field)
+            .WithMany()
+            .HasForeignKey(v => v.FieldId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<UserCustomFieldValue>()
+            .HasIndex(v => new { v.UserId, v.FieldId })
+            .IsUnique();
 
         modelBuilder.Entity<AttendanceImport>()
             .HasOne(i => i.CreatedBy)

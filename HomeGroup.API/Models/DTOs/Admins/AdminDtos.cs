@@ -1,3 +1,4 @@
+using HomeGroup.API.Models.DTOs.People;
 using HomeGroup.API.Models.DTOs.PersonStatuses;
 
 namespace HomeGroup.API.Models.DTOs.Admins;
@@ -29,7 +30,8 @@ public record AdminResponse(
     string? Church,
     string? Ministry,
     bool IsBaptizedWithSpirit,
-    PersonStatusDto? Status);
+    PersonStatusDto? Status,
+    List<CustomFieldDto> CustomFields);
 
 public record CreateAdminRequest(
     string Name,
