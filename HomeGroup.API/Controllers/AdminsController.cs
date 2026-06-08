@@ -264,6 +264,37 @@ public class AdminsController(AppDbContext db) : ControllerBase
 
     // ── Tasks ─────────────────────────────────────────────────────────────────
 
+    [HttpGet("me/tasks")]
+    public async Task<ActionResult<List<AdminTaskDto>>> GetMyTasks()
+    {
+        var idClaim = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (!long.TryParse(idClaim, out var userId)) return Unauthorized();
+
+        var tasks = await db.AdminTasks
+            .Include(t => t.CreatedBy)
+            .Where(t => t.TargetUserId == userId)
+            .OrderByDescending(t => t.CreatedAt)
+            .ToListAsync();
+
+        return Ok(tasks.Select(ToTaskDto).ToList());
+    }
+
+    [HttpPatch("me/tasks/{taskId}/toggle")]
+    public async Task<ActionResult<AdminTaskDto>> ToggleMyTask(long taskId)
+    {
+        var idClaim = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (!long.TryParse(idClaim, out var userId)) return Unauthorized();
+
+        var task = await db.AdminTasks.Include(t => t.CreatedBy)
+            .FirstOrDefaultAsync(t => t.Id == taskId && t.TargetUserId == userId);
+        if (task is null) return NotFound();
+
+        task.IsCompleted = !task.IsCompleted;
+        await db.SaveChangesAsync();
+
+        return Ok(ToTaskDto(task));
+    }
+
     [HttpGet("{id}/tasks")]
     [RequirePermission("admins.viewProfiles")]
     public async Task<ActionResult<List<AdminTaskDto>>> GetTasks(long id)

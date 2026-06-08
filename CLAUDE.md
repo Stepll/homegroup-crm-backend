@@ -22,7 +22,11 @@ HomeGroup.API/
     PeopleController.cs          — /api/v1/people (CRUD + custom field values + activity + convert-to-admin)
     AdminsController.cs          — /api/v1/admins (CRUD + profile + me/set-password (no perm) +
                                     :id/set-password (settings.admins) + me/dashboard GET/PUT +
+                                    me/tasks GET + me/tasks/:id/toggle PATCH (no perm) +
                                     activity GET/POST/DELETE + custom-fields POST/PUT/DELETE)
+    DashboardController.cs       — /api/v1/dashboard (inactive-members, status-distribution,
+                                    groups-comparison, groups-attendance-summary —
+                                    усе фільтрується по UserHomeGroups)
     PersonStatusesController.cs  — /api/v1/person-statuses (CRUD)
     RolesController.cs           — /api/v1/roles (CRUD, system role protection)
     AttendanceController.cs      — /api/v1/attendance (records + meta + dates + dots)
@@ -238,6 +242,8 @@ GET    /api/v1/admins/me                       → AdminResponse (поточни
 POST   /api/v1/admins/me/set-password         — { newPassword } — БЕЗ RequirePermission, будь-який auth юзер
 GET    /api/v1/admins/me/dashboard             → WidgetConfig[] (конфіг дашборду поточного юзера)
 PUT    /api/v1/admins/me/dashboard             — { config: WidgetConfig[] } → 204
+GET    /api/v1/admins/me/tasks                 → AdminTaskDto[] (мої задачі, без permission check)
+PATCH  /api/v1/admins/me/tasks/:taskId/toggle  → AdminTaskDto (тогл власної задачі, без permission check)
 GET    /api/v1/admins                          → AdminResponse[] [settings.admins]
 GET    /api/v1/admins/:id                      → AdminResponse (з customFields)
 POST   /api/v1/admins                          — { name, lastName?, email, password, roleIds[], primaryGroupId?, visibleGroupIds[] } [settings.admins]
@@ -423,6 +429,25 @@ POST   /api/v1/person-statuses      — { name, color }
 PUT    /api/v1/person-statuses/:id  — { name, color }
 DELETE /api/v1/person-statuses/:id
 ```
+
+### Dashboard (analytics)
+```
+GET    /api/v1/dashboard/inactive-members         — ?groupId=&minMissed=5 → InactiveMemberDto[]
+                                                    люди (Person + User) з missedCount >= minMissed
+                                                    за останні 6 міс, сортовані по missedCount desc
+                                                    [attendance.view]
+GET    /api/v1/dashboard/status-distribution      — ?groupId= → StatusDistributionResponse
+                                                    count людей по PersonStatusId (включає
+                                                    "Без статусу" групу для null) [people.view]
+GET    /api/v1/dashboard/groups-comparison        — ?groupIds=1,2,3&period=1m|3m|6m
+                                                    → GroupComparisonSeries[]
+                                                    для кожної групи: точки (date, attendanceRate)
+                                                    [attendance.stats]
+GET    /api/v1/dashboard/groups-attendance-summary → GroupsAttendanceSummaryResponse
+                                                    список груп з totalMembers (Persons + Admins)
+                                                    і avg1m/avg3m/avg6m + total row [attendance.stats]
+```
+Всі ендпоінти фільтруються по `UserHomeGroups` для не-superadmin (визначені у `GetVisibleGroupIds()`).
 
 ## Key Patterns
 
@@ -702,6 +727,19 @@ Nginx проксує на контейнер. SSL через Certbot + Let's Enc
       [people.customFields]. Definitions reuse `HomeGroupCustomField` (per-group), values
       live в новій `UserCustomFieldValue` table (UserId, FieldId, Value).
       `AdminResponse` тепер містить `customFields`.
+- [x] Dashboard analytics — `DashboardController` з ендпоінтами для нових віджетів:
+      `inactive-members` (5+ пропусків за 6 міс), `status-distribution` (pie chart по статусам),
+      `groups-comparison` (line chart порівняння домашок), `groups-attendance-summary`
+      (таблиця домашок з 1м/3м/6м + total). Все фільтрується по `UserHomeGroups`.
+- [x] My tasks dashboard widget — `GET /admins/me/tasks` + `PATCH /admins/me/tasks/:id/toggle`
+      без RequirePermission (своя дата). Решта tasks CRUD залишилась на `/admins/:id/tasks/...`
+      з `admins.viewProfiles`.
+- [x] Frontend dashboard widgets (Vite/React/antd-mobile):
+      MyTasks, MyOversight (peopleApi + dots reused), InactiveMembers (group filter),
+      GroupsComparison (SVG line chart, multi-select chips, period toggle),
+      StatusDistribution (SVG donut з center stat), GroupsAttendanceSummary (table з total row).
+      Registered у `widgetRegistry.ts` + desktop/mobile WIDGET_COMPONENTS maps.
+      FULL_WIDTH_WIDGETS desktop: groupStats, groupsComparison, groupsAttendanceSummary, inactiveMembers.
 
 ## TODO
 
