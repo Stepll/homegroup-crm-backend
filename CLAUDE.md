@@ -309,26 +309,35 @@ DELETE /api/v1/attendance/meeting   — ?groupId=&date= (тільки майбу
 
 ### Attendance Import/Export (Excel)
 ```
-GET  /api/v1/attendance/export       — ?groupIds=1,2,3&from=&to= → .xlsx (multi-sheet)
-GET  /api/v1/attendance/template     — ?groupIds=1,2,3 → .xlsx (структура з людьми, без даних)
+GET  /api/v1/attendance/export        — ?groupIds=1,2,3&from=&to= → .xlsx (multi-sheet)
+GET  /api/v1/attendance/template      — ?groupIds=1,2,3&from=&to= → .xlsx
+                                         (з періодом + MeetingDay → генерує порожні колонки
+                                          по днях зустрічей; без періоду → лише люди)
 POST /api/v1/attendance/import/preview — multipart file → ImportPreviewResponse
                                           [attendance.record]
 POST /api/v1/attendance/import/apply   — { importId, sheets: [...] } → ImportApplyResponse
                                           [attendance.record]
 ```
 
-Excel структура:
+Excel структура (поточний експорт):
 - Cols: `% | ID(hidden) | ПІБ | Статус | Опіка | Дата приєднання | dates →`
-- Header rows: `groupName+dates | Загалом | empty | empty | Нові/невіруючі/гості |
-  З інших домашок | Нотатки | empty | header | people...`
+- Rows (в порядку): `1`=group name + dates | `2`=Загалом | `5`=Нові/невіруючі/гості |
+  `6`=Нотатки | `8`=header (% / ID / ПІБ / Статус / Опіка / Дата приєднання) | `9+`=люди
 - Cell values: `1`=присутній, `0`=відсутній, `-`=скасована зустріч, порожньо=ще не приєднався/пішов
 - Past members: червоний фон, LeftAt з `GroupMemberHistory`
 - ID hint: `p:123`(Person) / `u:5`(User) — для round-trip matching
 
+Парсер дополнительно знаходить рядок «З інших домашок» зі **старих** Google Sheets файлів
+(label-based dynamic search) і додає його значення до `GuestCount`. У наших нових експортах
+цього рядка немає.
+
+Template + period: якщо `from` і `to` задано і у групи є `MeetingDay`, `MergeRecurringDates`
+додає колонку для кожного дня тижня в діапазоні (скіпає `MovedToDate` shadows).
+
 Import logic:
 - Sheet → group: exact name → contains → leader name fuzzy
 - Person → match: ID hint → exact name in group → past members → unknown (з suggestions)
-- "Нові/гості" + "З інших домашок" суммуются в `AttendanceMeta.GuestCount`
+- "Нові/гості" + "З інших домашок" (legacy) суммуются в `AttendanceMeta.GuestCount`
 - Конфлікти: attendance value / cancellation / guests count / notes
   Key: `(type, date, personRowIndex?)`. Default рішення = useFile.
 - LeftAt detection: остання непуста дата + ≥2 порожніх після неї → пропонується кандидат
@@ -641,10 +650,14 @@ Nginx проксує на контейнер. SSL через Certbot + Let's Enc
       Двоетапний імпорт: preview (зберігається в `AttendanceImports` table, ExpiresAt=+2h) →
       apply з рішеннями по конфліктах (`(type, date, personRowIndex?)` key).
       Конфлікти: attendance value / cancellation / guests / notes.
-      "Нові/гості" + "З інших домашок" → суммуются в `GuestCount`.
+      Парсер додатково знаходить «З інших домашок» зі старих файлів і додає до `GuestCount`
+      (у нашому експорті цього рядка немає).
       LeftAt detection — остання непуста дата + ≥2 порожніх після.
       Status/Oversight/JoinedAt/LeftAt — окремі тогли в decision (default OFF).
       Past members з `GroupMemberHistory.LeftAt` → червоний рядок в експорті.
+- [x] Template + period → генерує колонку на кожний `MeetingDay` в діапазоні через
+      `MergeRecurringDates` (move-out shadows виключаються). Дозволяє юзеру одразу мати
+      бланк на backfill-період.
 
 ## TODO
 
