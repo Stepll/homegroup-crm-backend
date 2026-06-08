@@ -47,10 +47,17 @@ public class DashboardController(AppDbContext db) : ControllerBase
             .Where(g => g.Key.PersonId.HasValue || g.Key.UserId.HasValue)
             .Select(g =>
             {
-                var missed = g.Count(a => !a.WasPresent);
-                var lastAttended = g.Where(a => a.WasPresent)
+                // Consecutive missed streak from most recent record backwards
+                var sortedDesc = g.OrderByDescending(a => a.MeetingDate).ToList();
+                var missed = 0;
+                foreach (var r in sortedDesc)
+                {
+                    if (r.WasPresent) break;
+                    missed++;
+                }
+                var lastAttended = sortedDesc
+                    .Where(a => a.WasPresent)
                     .Select(a => (DateOnly?)a.MeetingDate)
-                    .OrderByDescending(d => d)
                     .FirstOrDefault();
 
                 var sample = g.First();
