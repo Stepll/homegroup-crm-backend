@@ -107,10 +107,17 @@ HomeGroup.API/
                                    CabinetOrgMember (+CabinetRoleTag?),
                                    CabinetRoleTag(Name, Color),
                                    CabinetAttendanceSummary, CabinetUpcomingEvent,
-                                   CabinetOverseePerson, CabinetStats,
-                                   GroupEventDto, CreateGroupEventRequest
-      Groups/GroupStatsDto.cs    — GroupStatsResponse, StatsSummary, MeetingStatsItem,
-                                   PersonAttendanceStat
+                                   CabinetOverseePerson,
+                                   CabinetStats(AvgAttendanceRate, PrevAvgAttendanceRate,
+                                     NewMembers, PrevNewMembers, TotalMembers, PrevTotalMembers),
+                                   GroupEventDto, CreateGroupEventRequest,
+                                   AllNeedsDto(Id, HomeGroupId, GroupName, GroupColor,
+                                     SubjectName, Description, Status, CreatedAt, PersonId?, UserId?)
+      Groups/GroupStatsDto.cs    — GroupStatsResponse,
+                                   StatsSummary(AvgAttendanceRate, PrevAvgAttendanceRate,
+                                     MeetingCount, TotalGuests,
+                                     NewMembers, PrevNewMembers, TotalMembers, PrevTotalMembers),
+                                   MeetingStatsItem, PersonAttendanceStat
       People/PersonDtos.cs       — CreatePersonRequest, UpdatePersonRequest (всі поля),
                                    PersonResponse, PersonDetailResponse (з розширеними полями),
                                    CustomFieldDto
@@ -289,6 +296,10 @@ GET    /api/v1/groups/:id/cabinet              → GroupCabinetResponse (вкл�
                                                  TelegramGroupId, CabinetRoleTag для orgTeam)
 GET    /api/v1/groups/stats/all?period=1m|3m|6m → GroupStatsResponse (всі групи агреговано)
 GET    /api/v1/groups/:id/stats?period=1m|3m|6m → GroupStatsResponse
+GET    /api/v1/groups/all-needs?groupId=&status=active
+                                               → AllNeedsDto[] (активні потреби з усіх видимих
+                                                 груп або конкретної групи, з GroupName/Color)
+                                                 [page.cabinet]
 
 GET    /api/v1/groups/:id/events
 POST   /api/v1/groups/:id/events               — { name, month, day, year? }
@@ -433,12 +444,15 @@ DELETE /api/v1/person-statuses/:id
 ### Dashboard (analytics)
 ```
 GET    /api/v1/dashboard/inactive-members         — ?groupId=&minMissed=5 → InactiveMemberDto[]
-                                                    люди (Person + User) з missedCount >= minMissed
-                                                    за останні 6 міс, сортовані по missedCount desc
+                                                    люди (Person + User) з consecutiveMissed >= minMissed
+                                                    за останні 6 міс (streak: рахуються пропуски
+                                                    підряд з останнього запису, зупиняється на
+                                                    першому WasPresent=true), сортовані desc
                                                     [attendance.view]
 GET    /api/v1/dashboard/status-distribution      — ?groupId= → StatusDistributionResponse
-                                                    count людей по PersonStatusId (включає
-                                                    "Без статусу" групу для null) [people.view]
+                                                    count людей по PersonStatusId — включає
+                                                    як Person так і User (без superadmin id=0);
+                                                    "Без статусу" група для null [people.view]
 GET    /api/v1/dashboard/groups-comparison        — ?groupIds=1,2,3&period=1m|3m|6m
                                                     → GroupComparisonSeries[]
                                                     для кожної групи: точки (date, attendanceRate)
@@ -728,7 +742,8 @@ Nginx проксує на контейнер. SSL через Certbot + Let's Enc
       live в новій `UserCustomFieldValue` table (UserId, FieldId, Value).
       `AdminResponse` тепер містить `customFields`.
 - [x] Dashboard analytics — `DashboardController` з ендпоінтами для нових віджетів:
-      `inactive-members` (5+ пропусків за 6 міс), `status-distribution` (pie chart по статусам),
+      `inactive-members` (consecutive streak 5+ підряд за 6 міс, рахує Person + User),
+      `status-distribution` (pie chart по статусам, Person + User),
       `groups-comparison` (line chart порівняння домашок), `groups-attendance-summary`
       (таблиця домашок з 1м/3м/6м + total). Все фільтрується по `UserHomeGroups`.
 - [x] My tasks dashboard widget — `GET /admins/me/tasks` + `PATCH /admins/me/tasks/:id/toggle`
@@ -737,9 +752,21 @@ Nginx проксує на контейнер. SSL через Certbot + Let's Enc
 - [x] Frontend dashboard widgets (Vite/React/antd-mobile):
       MyTasks, MyOversight (peopleApi + dots reused), InactiveMembers (group filter),
       GroupsComparison (SVG line chart, multi-select chips, period toggle),
-      StatusDistribution (SVG donut з center stat), GroupsAttendanceSummary (table з total row).
+      StatusDistribution (SVG donut з center stat), GroupsAttendanceSummary (table з total row),
+      RandomNeed (випадкова активна потреба, group filter, ↺ Нова, статус-зміна).
       Registered у `widgetRegistry.ts` + desktop/mobile WIDGET_COMPONENTS maps.
       FULL_WIDTH_WIDGETS desktop: groupStats, groupsComparison, groupsAttendanceSummary, inactiveMembers.
+- [x] CabinetStats оновлено: фіксований 3-місячний вікон, `NewMembers` через
+      `GroupMemberHistory.JoinedAt` (не `Person.CreatedAt`), `TotalMembers` включає
+      адмінів (`Users.PrimaryGroupId`). Кожна стата має `Prev*` поле для порівняння
+      з попереднім 3-місячним вікном. `CalcAvgAttendanceRate` хелпер — per-meeting avg rate.
+- [x] StatsSummary (GetStats/GetStatsAll) аналогічно оновлено: prev period, totalMembers,
+      newMembers через GroupMemberHistory.JoinedAt. Prev period = той самий проміжок до current.
+- [x] `GET /groups/all-needs` — нові активні потреби з усіх видимих груп або конкретної,
+      з вбудованим GroupName/Color. `GetVisibleGroupIds()` хелпер додано в GroupsController.
+- [x] Stats page (desktop/mobile) — додано картки "Під ризиком" (3+ пропуски, незалежно
+      від вибраного періоду) та "Розподіл за статусом" (SVG donut для цієї групи).
+      Фікс: прогрес-бари в "Рейтинг присутності" на десктопі більше не вилізають за картку.
 
 ## TODO
 
