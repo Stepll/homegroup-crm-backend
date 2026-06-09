@@ -46,7 +46,11 @@ public record CabinetOverseePerson(long Id, string FullName);
 
 public record CabinetRoleTag(string Name, string Color);
 
-public record CabinetStats(double AvgAttendanceRate, int NewMembersThisMonth, int TotalMembers);
+public record CabinetStats(
+    double AvgAttendanceRate, double PrevAvgAttendanceRate,
+    int NewMembers, int PrevNewMembers,
+    int TotalMembers, int PrevTotalMembers
+);
 
 public record GroupEventDto(long Id, string Name, int Month, int Day, int? Year, int DaysUntil);
 public record CreateGroupEventRequest(string Name, int Month, int Day, int? Year);

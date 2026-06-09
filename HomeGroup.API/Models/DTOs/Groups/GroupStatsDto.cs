@@ -6,10 +6,12 @@ public record GroupStatsResponse(
     List<PersonAttendanceStat> PersonStats);
 
 public record StatsSummary(
-    double AvgAttendanceRate,
+    double AvgAttendanceRate, double PrevAvgAttendanceRate,
     int MeetingCount,
     int TotalGuests,
-    int NewMembers);
+    int NewMembers, int PrevNewMembers,
+    int TotalMembers, int PrevTotalMembers
+);
 
 public record MeetingStatsItem(
     string Date,

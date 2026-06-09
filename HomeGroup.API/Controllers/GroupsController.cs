@@ -995,20 +995,32 @@ public class GroupsController(AppDbContext db) : ControllerBase
             return new CabinetOrgMember(a.Id, a.Name, a.LastName, a.Email, myOversees.Count, myOversees, roleTag);
         }).ToList();
 
-        // Stats
-        var totalMembers = await db.HomeGroupMembers.CountAsync(m => m.HomeGroupId == id);
-        var monthStart = new DateTime(DateTime.UtcNow.Year, DateTime.UtcNow.Month, 1, 0, 0, 0, DateTimeKind.Utc);
-        var newThisMonth = await db.People.CountAsync(p => p.PrimaryGroupId == id && p.CreatedAt >= monthStart);
+        // Stats: fixed 3-month window (current) vs previous 3 months
+        var currStart = today.AddMonths(-3);
+        var prevStart = today.AddMonths(-6);
+        var currStartDt = new DateTime(currStart.Year, currStart.Month, currStart.Day, 0, 0, 0, DateTimeKind.Utc);
+        var prevStartDt = new DateTime(prevStart.Year, prevStart.Month, prevStart.Day, 0, 0, 0, DateTimeKind.Utc);
 
-        var allAttendance = await db.Attendances.Where(a => a.HomeGroupId == id).ToListAsync();
-        double avgRate = 0;
-        if (allAttendance.Count > 0 && totalMembers > 0)
-        {
-            var byDate = allAttendance.GroupBy(a => a.MeetingDate);
-            avgRate = byDate.Average(g => g.Count(r => r.WasPresent) * 100.0 / totalMembers);
-        }
+        var totalMembers = await db.HomeGroupMembers.CountAsync(m => m.HomeGroupId == id)
+            + await db.Users.CountAsync(u => u.PrimaryGroupId == id && u.Id != 0);
 
-        var stats = new CabinetStats(Math.Round(avgRate, 1), newThisMonth, totalMembers);
+        var joinedInCurr3m = await db.GroupMemberHistories
+            .CountAsync(h => h.HomeGroupId == id && h.JoinedAt >= currStartDt);
+        var leftInCurr3m = await db.GroupMemberHistories
+            .CountAsync(h => h.HomeGroupId == id && h.LeftAt != null && h.LeftAt >= currStartDt);
+        var prevTotalMembers = Math.Max(0, totalMembers - joinedInCurr3m + leftInCurr3m);
+
+        var newMembers = joinedInCurr3m;
+        var prevNewMembers = await db.GroupMemberHistories
+            .CountAsync(h => h.HomeGroupId == id && h.JoinedAt >= prevStartDt && h.JoinedAt < currStartDt);
+
+        var allAttendance6m = await db.Attendances
+            .Where(a => a.HomeGroupId == id && a.MeetingDate >= prevStart && a.MeetingDate <= today)
+            .ToListAsync();
+        var avgRate = CalcAvgAttendanceRate(allAttendance6m.Where(a => a.MeetingDate >= currStart));
+        var prevAvgRate = CalcAvgAttendanceRate(allAttendance6m.Where(a => a.MeetingDate < currStart));
+
+        var stats = new CabinetStats(avgRate, prevAvgRate, newMembers, prevNewMembers, totalMembers, prevTotalMembers);
 
         // Use one-time override date if set and not yet expired
         var nextMeetingStr = group.NextMeetingOverrideDate is not null
@@ -1171,18 +1183,21 @@ public class GroupsController(AppDbContext db) : ControllerBase
     public async Task<ActionResult<GroupStatsResponse>> GetAllStats([FromQuery] string period = "3m")
     {
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var periodMonthsAll = period switch { "1m" => 1, "6m" => 6, _ => 3 };
         var periodStart = period switch
         {
             "1m" => today.AddMonths(-1),
             "6m" => today.AddMonths(-6),
             _ => today.AddMonths(-3),
         };
+        var prevPeriodStartAll = periodStart.AddMonths(-periodMonthsAll);
         var periodStartDt = new DateTime(periodStart.Year, periodStart.Month, periodStart.Day, 0, 0, 0, DateTimeKind.Utc);
+        var prevPeriodStartDtAll = new DateTime(prevPeriodStartAll.Year, prevPeriodStartAll.Month, prevPeriodStartAll.Day, 0, 0, 0, DateTimeKind.Utc);
 
         var attendance = await db.Attendances
             .Include(a => a.Person)
             .Include(a => a.User)
-            .Where(a => a.MeetingDate >= periodStart)
+            .Where(a => a.MeetingDate >= prevPeriodStartAll && a.MeetingDate <= today)
             .OrderBy(a => a.MeetingDate)
             .ToListAsync();
 
@@ -1190,7 +1205,10 @@ public class GroupsController(AppDbContext db) : ControllerBase
             .Where(m => m.MeetingDate >= periodStart)
             .ToListAsync();
 
-        var byDate = attendance.GroupBy(a => a.MeetingDate).OrderBy(g => g.Key).ToList();
+        var currAttendanceAll = attendance.Where(a => a.MeetingDate >= periodStart).ToList();
+        var prevAttendanceAll = attendance.Where(a => a.MeetingDate >= prevPeriodStartAll && a.MeetingDate < periodStart).ToList();
+
+        var byDate = currAttendanceAll.GroupBy(a => a.MeetingDate).OrderBy(g => g.Key).ToList();
 
         var meetings = byDate.Select(g =>
         {
@@ -1210,7 +1228,7 @@ public class GroupsController(AppDbContext db) : ControllerBase
                 absentees);
         }).ToList();
 
-        var personStats = attendance
+        var personStats = currAttendanceAll
             .GroupBy(a => new {
                 Key = a.PersonId.HasValue ? $"p{a.PersonId}" : $"u{a.UserId}",
                 PersonId = a.PersonId,
@@ -1228,13 +1246,17 @@ public class GroupsController(AppDbContext db) : ControllerBase
             .ThenByDescending(p => p.PresentCount)
             .ToList();
 
-        var avgRate = meetings.Count > 0 && meetings.Any(m => m.TotalMembers > 0)
-            ? meetings.Where(m => m.TotalMembers > 0).Average(m => m.AttendanceRate)
-            : 0;
+        var avgRateAll = CalcAvgAttendanceRate(currAttendanceAll);
+        var prevAvgRateAll = CalcAvgAttendanceRate(prevAttendanceAll);
         var totalGuests = metas.Sum(m => m.GuestCount);
-        var newMembers = await db.People.CountAsync(p => p.CreatedAt >= periodStartDt);
+        var newMembersAll = await db.GroupMemberHistories.CountAsync(h => h.JoinedAt >= periodStartDt);
+        var prevNewMembersAll = await db.GroupMemberHistories.CountAsync(h => h.JoinedAt >= prevPeriodStartDtAll && h.JoinedAt < periodStartDt);
+        var totalMembersAll = await db.HomeGroupMembers.CountAsync()
+            + await db.Users.CountAsync(u => u.Id != 0 && u.PrimaryGroupId != null);
+        var leftInPeriodAll = await db.GroupMemberHistories.CountAsync(h => h.LeftAt != null && h.LeftAt >= periodStartDt);
+        var prevTotalMembersAll = Math.Max(0, totalMembersAll - newMembersAll + leftInPeriodAll);
 
-        var summary = new StatsSummary(Math.Round(avgRate, 1), meetings.Count, totalGuests, newMembers);
+        var summary = new StatsSummary(avgRateAll, prevAvgRateAll, meetings.Count, totalGuests, newMembersAll, prevNewMembersAll, totalMembersAll, prevTotalMembersAll);
         return Ok(new GroupStatsResponse(summary, meetings, personStats));
     }
 
@@ -1245,18 +1267,21 @@ public class GroupsController(AppDbContext db) : ControllerBase
         if (!await db.HomeGroups.AnyAsync(g => g.Id == id)) return NotFound();
 
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var periodMonths = period switch { "1m" => 1, "6m" => 6, _ => 3 };
         var periodStart = period switch
         {
             "1m" => today.AddMonths(-1),
             "6m" => today.AddMonths(-6),
             _ => today.AddMonths(-3),
         };
+        var prevPeriodStart = periodStart.AddMonths(-periodMonths);
         var periodStartDt = new DateTime(periodStart.Year, periodStart.Month, periodStart.Day, 0, 0, 0, DateTimeKind.Utc);
+        var prevPeriodStartDt = new DateTime(prevPeriodStart.Year, prevPeriodStart.Month, prevPeriodStart.Day, 0, 0, 0, DateTimeKind.Utc);
 
         var attendance = await db.Attendances
             .Include(a => a.Person)
             .Include(a => a.User)
-            .Where(a => a.HomeGroupId == id && a.MeetingDate >= periodStart)
+            .Where(a => a.HomeGroupId == id && a.MeetingDate >= prevPeriodStart && a.MeetingDate <= today)
             .OrderBy(a => a.MeetingDate)
             .ToListAsync();
 
@@ -1264,8 +1289,11 @@ public class GroupsController(AppDbContext db) : ControllerBase
             .Where(m => m.HomeGroupId == id && m.MeetingDate >= periodStart)
             .ToDictionaryAsync(m => m.MeetingDate, m => m.GuestCount);
 
-        // Per-meeting stats
-        var byDate = attendance.GroupBy(a => a.MeetingDate).OrderBy(g => g.Key).ToList();
+        var currAttendance = attendance.Where(a => a.MeetingDate >= periodStart).ToList();
+        var prevAttendanceRecs = attendance.Where(a => a.MeetingDate >= prevPeriodStart && a.MeetingDate < periodStart).ToList();
+
+        // Per-meeting stats (current period only)
+        var byDate = currAttendance.GroupBy(a => a.MeetingDate).OrderBy(g => g.Key).ToList();
 
         var meetings = byDate.Select(g =>
         {
@@ -1285,8 +1313,8 @@ public class GroupsController(AppDbContext db) : ControllerBase
                 absentees);
         }).ToList();
 
-        // Per-person stats
-        var personStats = attendance
+        // Per-person stats (current period only)
+        var personStats = currAttendance
             .GroupBy(a => new {
                 Key = a.PersonId.HasValue ? $"p{a.PersonId}" : $"u{a.UserId}",
                 PersonId = a.PersonId,
@@ -1310,13 +1338,17 @@ public class GroupsController(AppDbContext db) : ControllerBase
             .ToList();
 
         // Summary
-        var avgRate = meetings.Count > 0 && meetings.Any(m => m.TotalMembers > 0)
-            ? meetings.Where(m => m.TotalMembers > 0).Average(m => m.AttendanceRate)
-            : 0;
+        var avgRate = CalcAvgAttendanceRate(currAttendance);
+        var prevAvgRate = CalcAvgAttendanceRate(prevAttendanceRecs);
         var totalGuests = metaLookup.Values.Sum();
-        var newMembers = await db.People.CountAsync(p => p.PrimaryGroupId == id && p.CreatedAt >= periodStartDt);
+        var newMembers = await db.GroupMemberHistories.CountAsync(h => h.HomeGroupId == id && h.JoinedAt >= periodStartDt);
+        var prevNewMembers = await db.GroupMemberHistories.CountAsync(h => h.HomeGroupId == id && h.JoinedAt >= prevPeriodStartDt && h.JoinedAt < periodStartDt);
+        var totalMembers = await db.HomeGroupMembers.CountAsync(m => m.HomeGroupId == id)
+            + await db.Users.CountAsync(u => u.PrimaryGroupId == id && u.Id != 0);
+        var leftInPeriod = await db.GroupMemberHistories.CountAsync(h => h.HomeGroupId == id && h.LeftAt != null && h.LeftAt >= periodStartDt);
+        var prevTotalMembers = Math.Max(0, totalMembers - newMembers + leftInPeriod);
 
-        var summary = new StatsSummary(Math.Round(avgRate, 1), meetings.Count, totalGuests, newMembers);
+        var summary = new StatsSummary(avgRate, prevAvgRate, meetings.Count, totalGuests, newMembers, prevNewMembers, totalMembers, prevTotalMembers);
 
         return Ok(new GroupStatsResponse(summary, meetings, personStats));
     }
@@ -1504,6 +1536,17 @@ public class GroupsController(AppDbContext db) : ControllerBase
     }
 
     // ── Attendance helpers ────────────────────────────────────────────────────
+
+    private static double CalcAvgAttendanceRate(IEnumerable<Attendance> records)
+    {
+        var list = records.ToList();
+        if (list.Count == 0) return 0;
+        var rates = list
+            .GroupBy(a => a.MeetingDate)
+            .Select(g => { var t = g.Count(); var p = g.Count(r => r.WasPresent); return t == 0 ? 0.0 : p * 100.0 / t; })
+            .ToList();
+        return rates.Count == 0 ? 0 : Math.Round(rates.Average(), 1);
+    }
 
     private static string AttendanceMemberName(Attendance a)
     {
