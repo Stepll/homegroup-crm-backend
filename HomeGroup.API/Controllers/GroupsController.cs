@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using HomeGroup.API.Authorization;
 using HomeGroup.API.Data;
 using HomeGroup.API.Models.DTOs.Groups;
@@ -1536,6 +1537,51 @@ public class GroupsController(AppDbContext db) : ControllerBase
     }
 
     // ── Attendance helpers ────────────────────────────────────────────────────
+
+    [HttpGet("all-needs")]
+    [RequirePermission("page.cabinet")]
+    public async Task<ActionResult<List<AllNeedsDto>>> GetAllNeeds(
+        [FromQuery] long? groupId,
+        [FromQuery] string status = "active")
+    {
+        var visibleIds = await GetVisibleGroupIds();
+
+        var query = db.GroupNeeds
+            .Include(n => n.HomeGroup)
+            .Where(n => n.Status == status)
+            .AsQueryable();
+
+        if (groupId.HasValue)
+        {
+            if (visibleIds is not null && !visibleIds.Contains(groupId.Value))
+                return Ok(new List<AllNeedsDto>());
+            query = query.Where(n => n.HomeGroupId == groupId.Value);
+        }
+        else if (visibleIds is not null)
+            query = query.Where(n => visibleIds.Contains(n.HomeGroupId));
+
+        var needs = await query
+            .OrderByDescending(n => n.CreatedAt)
+            .Select(n => new AllNeedsDto(
+                n.Id, n.HomeGroupId, n.HomeGroup.Name, n.HomeGroup.Color,
+                n.SubjectName, n.Description, n.Status,
+                n.CreatedAt.ToString("yyyy-MM-dd"),
+                n.PersonId, n.UserId))
+            .ToListAsync();
+
+        return Ok(needs);
+    }
+
+    private async Task<HashSet<long>?> GetVisibleGroupIds()
+    {
+        long.TryParse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value, out var currentUserId);
+        if (currentUserId == 0) return null;
+        var ids = await db.UserHomeGroups
+            .Where(ug => ug.UserId == currentUserId)
+            .Select(ug => ug.HomeGroupId)
+            .ToListAsync();
+        return ids.ToHashSet();
+    }
 
     private static double CalcAvgAttendanceRate(IEnumerable<Attendance> records)
     {

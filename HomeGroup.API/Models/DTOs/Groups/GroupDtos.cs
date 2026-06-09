@@ -58,6 +58,12 @@ public record UpdateNotifSettingsRequest(
 
 public record GroupNeedDto(long Id, string SubjectName, string Description, string Status, DateTime CreatedAt, long? PersonId = null, long? UserId = null);
 
+public record AllNeedsDto(
+    long Id, long HomeGroupId, string GroupName, string GroupColor,
+    string SubjectName, string Description, string Status, string CreatedAt,
+    long? PersonId, long? UserId
+);
+
 public record CreateGroupNeedRequest(string SubjectName, string Description, long? PersonId = null, long? UserId = null);
 
 public record UpdateGroupNeedRequest(string SubjectName, string Description, string Status, long? PersonId = null, long? UserId = null);
