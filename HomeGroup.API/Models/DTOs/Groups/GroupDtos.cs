@@ -47,14 +47,16 @@ public record NotifSettingsDto(
     bool EventDay,
     bool Conflict,
     bool ConflictResolved,
-    bool AttendanceAsk);
+    bool AttendanceAsk,
+    bool NeedsRecordingAsk);
 
 public record UpdateNotifSettingsRequest(
     bool EventSevenDays,
     bool EventDay,
     bool Conflict,
     bool ConflictResolved,
-    bool AttendanceAsk);
+    bool AttendanceAsk,
+    bool NeedsRecordingAsk);
 
 public record GroupNeedDto(long Id, string SubjectName, string Description, string Status, DateTime CreatedAt, long? PersonId = null, long? UserId = null);
 
