@@ -17,6 +17,19 @@ namespace HomeGroup.API.Controllers;
 [Authorize]
 public class GroupsController(AppDbContext db) : ControllerBase
 {
+    // Meeting times are stored as Kyiv local time strings (e.g. "18:00").
+    // Use Kyiv local for all today/nowTime comparisons so meeting-day logic
+    // (ComputeNextMeeting / ComputeLastMeeting) works correctly across timezones.
+    private static readonly TimeZoneInfo KyivTz = TimeZoneInfo.FindSystemTimeZoneById("Europe/Kyiv");
+
+    private static (DateOnly Today, TimeOnly NowTime) KyivNow()
+    {
+        var local = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, KyivTz);
+        return (DateOnly.FromDateTime(local), TimeOnly.FromDateTime(local));
+    }
+
+    private static DateOnly KyivToday() => KyivNow().Today;
+
     [HttpGet]
     public async Task<ActionResult<List<GroupResponse>>> GetAll()
     {
@@ -26,8 +39,7 @@ public class GroupsController(AppDbContext db) : ControllerBase
             .OrderBy(g => g.Name)
             .ToListAsync();
 
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
-        var nowTime = TimeOnly.FromDateTime(DateTime.UtcNow);
+        var (today, nowTime) = KyivNow();
 
         var groups = raw.Select(g =>
         {
@@ -801,7 +813,7 @@ public class GroupsController(AppDbContext db) : ControllerBase
     [HttpGet("{id}/events")]
     public async Task<ActionResult<List<GroupEventDto>>> GetEvents(long id)
     {
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var today = KyivToday();
         var events = await db.GroupEvents
             .Where(e => e.HomeGroupId == id)
             .OrderBy(e => e.CreatedAt)
@@ -834,7 +846,7 @@ public class GroupsController(AppDbContext db) : ControllerBase
         db.GroupEvents.Add(evt);
         await db.SaveChangesAsync();
 
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var today = KyivToday();
         return Ok(new GroupEventDto(evt.Id, evt.Name, evt.Month, evt.Day, evt.Year, ComputeDaysUntil(evt.Month, evt.Day, evt.Year, today)));
     }
 
@@ -849,7 +861,7 @@ public class GroupsController(AppDbContext db) : ControllerBase
         evt.Day = request.Day;
         evt.Year = request.Year;
         await db.SaveChangesAsync();
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var today = KyivToday();
         return Ok(new GroupEventDto(evt.Id, evt.Name, evt.Month, evt.Day, evt.Year, ComputeDaysUntil(evt.Month, evt.Day, evt.Year, today)));
     }
 
@@ -929,8 +941,7 @@ public class GroupsController(AppDbContext db) : ControllerBase
         var group = await db.HomeGroups.FirstOrDefaultAsync(g => g.Id == id);
         if (group is null) return NotFound();
 
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
-        var nowTime = TimeOnly.FromDateTime(DateTime.UtcNow);
+        var (today, nowTime) = KyivNow();
 
         var nextMeeting = ComputeNextMeeting(group.MeetingDay, group.MeetingTime, today, nowTime);
 
@@ -1183,7 +1194,7 @@ public class GroupsController(AppDbContext db) : ControllerBase
     [RequirePermission("attendance.stats")]
     public async Task<ActionResult<GroupStatsResponse>> GetAllStats([FromQuery] string period = "3m")
     {
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var today = KyivToday();
         var periodMonthsAll = period switch { "1m" => 1, "6m" => 6, _ => 3 };
         var periodStart = period switch
         {
@@ -1267,7 +1278,7 @@ public class GroupsController(AppDbContext db) : ControllerBase
     {
         if (!await db.HomeGroups.AnyAsync(g => g.Id == id)) return NotFound();
 
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var today = KyivToday();
         var periodMonths = period switch { "1m" => 1, "6m" => 6, _ => 3 };
         var periodStart = period switch
         {
@@ -1473,8 +1484,7 @@ public class GroupsController(AppDbContext db) : ControllerBase
         var group = await db.HomeGroups.FirstOrDefaultAsync(g => g.Id == id);
         if (group is null) return NotFound();
 
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
-        var nowTime = TimeOnly.FromDateTime(DateTime.UtcNow);
+        var (today, nowTime) = KyivNow();
 
         // Determine current next meeting (override or computed)
         DateOnly currentNext;
