@@ -37,6 +37,7 @@ HomeGroup.API/
     GoogleCalendarController.cs  — /api/v1/google-calendar/sync (manual Google sync)
     RoomsController.cs           — /api/v1/rooms (CRUD)
     PlanTemplatesController.cs   — /api/v1/plan-templates (global meeting templates)
+    AnonymousPollsController.cs  — /api/v1/anon-polls (create, get active, close)
   Data/
     AppDbContext.cs               — EF Core context, OnModelCreating, role seeds
     Migrations/                  — EF Core migrations
@@ -44,12 +45,14 @@ HomeGroup.API/
     Entities/
       Role.cs                    — Id, Name, Color, PermissionsJson, IsSystem, IsDefault
       User.cs                    — Id, Email, PasswordHash, Name, LastName,
-                                   Phone?, Telegram?, Gender?, MaritalStatus?, Address?,
+                                   Phone?, Telegram?, TelegramChatId? (long),
+                                   Gender?, MaritalStatus?, Address?,
                                    DateOfBirth?, IsBaptized, Church?, Ministry?,
                                    IsBaptizedWithSpirit, PersonStatusId?,
                                    DashboardConfigJson? (text, JSON array of WidgetConfig),
                                    PrimaryGroupId, UserRoles[], UserHomeGroups[]
       Person.cs                  — Id, Name, LastName, Phone, Email, Telegram?,
+                                   TelegramChatId? (long),
                                    Notes, Gender?, MaritalStatus?, Address?,
                                    DateOfBirth?, IsBaptized, Church?, Ministry?,
                                    IsBaptizedWithSpirit, PersonStatusId?,
@@ -92,6 +95,9 @@ HomeGroup.API/
                                    — OriginalMeetingDate set when plan was moved with a
                                      rescheduled meeting; used to restore on Schedule reset
       MeetingPlanBlock.cs        — Id, PlanId, Order, Time, Title, Info?, Responsible?
+      AnonymousPoll.cs           — Id, HomeGroupId (FK), StartedByUserId? (FK → User, SetNull),
+                                   DestinationChatId (long), StartedAt, ExpiresAt
+                                   — активна поки ExpiresAt > NOW(). Index on (HomeGroupId, ExpiresAt).
     DTOs/
       Auth/AuthDtos.cs
       Groups/GroupDtos.cs        — GroupResponse (+TelegramGroupId), CreateGroupRequest,
@@ -120,12 +126,14 @@ HomeGroup.API/
                                    MeetingStatsItem, PersonAttendanceStat
       People/PersonDtos.cs       — CreatePersonRequest, UpdatePersonRequest (всі поля),
                                    PersonResponse, PersonDetailResponse (з розширеними полями),
-                                   CustomFieldDto
+                                   CustomFieldDto,
+                                   SetTelegramChatIdRequest(ChatId long?)
       PersonStatuses/PersonStatusDtos.cs — PersonStatusDto(Id,Name,Color),
                                    CreatePersonStatusRequest, UpdatePersonStatusRequest
-      Admins/AdminDtos.cs        — AdminResponse (всі поля профілю + roles + groups),
+      Admins/AdminDtos.cs        — AdminResponse (всі поля профілю + roles + groups + TelegramChatId),
                                    CreateAdminRequest, UpdateAdminRequest,
-                                   UpdateAdminProfileRequest, SetPasswordRequest
+                                   UpdateAdminProfileRequest, SetPasswordRequest,
+                                   SetAdminTelegramChatIdRequest(ChatId long?)
       Roles/RoleDtos.cs
       Attendance/AttendanceDtos.cs — RecordAttendanceRequest, AttendanceEntry (personId? | userId?),
                                      AttendanceResponse, AttendanceSummary,
@@ -202,10 +210,30 @@ Permission: `groups.schedule.manage`
 
 ### Notification Settings
 `HomeGroupEntity.NotifSettingsJson` (string?, text) — JSON-об'єкт з налаштуваннями сповіщень Telegram:
-- Ключі: `event_7days`, `event_day`, `conflict`, `conflict_resolved`, `attendance_ask`
+- Ключі: `event_7days`, `event_day`, `conflict`, `conflict_resolved`, `attendance_ask`, `needs_recording_ask`
 - Дефолт для всіх: `true`
-- API повертає camelCase: `eventSevenDays`, `eventDay`, `conflict`, `conflictResolved`, `attendanceAsk`
+- API повертає camelCase: `eventSevenDays`, `eventDay`, `conflict`, `conflictResolved`, `attendanceAsk`, `needsRecordingAsk`
 - Бот читає налаштування через API (не локальний JSON-файл) і перевіряє перед кожним типом сповіщення
+
+### Anonymous Poll
+`AnonymousPoll` — анонімне опитування, прив'язане до групи:
+- `DestinationChatId` — Telegram chat ID куди пересилаються анонімні повідомлення
+  (може бути group chat або private chat адміна)
+- Активна поки `ExpiresAt > UTC NOW`. `ExpiresAt` = кінець поточного дня за Kyiv timezone в UTC.
+- При створенні нового опитування — попередньо активне для тієї ж групи закривається
+  (ExpiresAt = NOW()).
+- `StartedByUserId?` — хто запустив (nullable, SetNull on delete)
+
+### Kyiv Timezone in GroupsController
+Всі обчислення дат у `GroupsController` використовують Kyiv timezone (не UTC):
+```csharp
+private static readonly TimeZoneInfo KyivTz = TimeZoneInfo.FindSystemTimeZoneById("Europe/Kyiv");
+private static (DateOnly Today, TimeOnly NowTime) KyivNow() { ... }
+private static DateOnly KyivToday() => KyivNow().Today;
+```
+Це важливо для `ComputeNextMeeting` / `ComputeLastMeeting` / `prevScheduledMeetingDate`:
+зустрічі відбуваються по місцевому часу Kyiv, UTC-порівняння давало неправильні результати
+(авто-відмітка не спрацьовувала якщо зустріч о 18:00 Kyiv = 15:00 UTC).
 
 ## API Endpoints
 
@@ -241,6 +269,8 @@ POST   /api/v1/people/:id/convert-to-admin     — { email, password, roleIds[],
                                                UserCustomFieldValue + PersonActivity→UserActivity,
                                                видаляє HomeGroupMembers + Person. Логує
                                                UserActivity з Type="person_converted".
+
+PUT    /api/v1/people/:id/telegram-chat-id     — { chatId: long? } → 204 (Telegram бот персистить chat_id)
 ```
 
 ### Admins
@@ -269,6 +299,8 @@ POST   /api/v1/admins/:id/custom-fields        — { name } [people.customFields
                                                  створює HomeGroupCustomField в адміновій PrimaryGroup
 PUT    /api/v1/admins/:id/custom-fields/:fieldId — { value } → upsert UserCustomFieldValue [people.customFields]
 DELETE /api/v1/admins/:id/custom-fields/:fieldId [people.customFields]
+
+PUT    /api/v1/admins/:id/telegram-chat-id      — { chatId: long? } → 204 (Telegram бот персистить chat_id)
 ```
 
 **Dashboard config**: `WidgetConfig[] = [{id: string, enabled: bool}]` — зберігається в `User.DashboardConfigJson` як text.
@@ -316,12 +348,23 @@ PUT    /api/v1/groups/:id/skip-meeting         → обчислює наступ
 
 GET    /api/v1/groups/:id/notif-settings       → NotifSettingsDto [page.cabinet]
 PUT    /api/v1/groups/:id/notif-settings       — { eventSevenDays, eventDay, conflict,
-                                                   conflictResolved, attendanceAsk } [page.cabinet]
+                                                   conflictResolved, attendanceAsk,
+                                                   needsRecordingAsk } [page.cabinet]
 
 GET    /api/v1/groups/:id/needs                → GroupNeedDto[] [page.cabinet]
 POST   /api/v1/groups/:id/needs                — { subjectName, description, personId?, userId? } [groups.events.manage]
 PUT    /api/v1/groups/:id/needs/:needId        — { subjectName, description, status, personId?, userId? } [groups.events.manage]
 DELETE /api/v1/groups/:id/needs/:needId        [groups.events.manage]
+```
+
+### Anonymous Polls
+```
+POST   /api/v1/anon-polls                      — { homeGroupId, destinationChatId }
+                                                 [groups.events.manage]: створює опитування,
+                                                 закриває попереднє активне для групи,
+                                                 ExpiresAt = кінець дня за Kyiv timezone в UTC
+GET    /api/v1/anon-polls/active?homeGroupId=  → AnonymousPollDto | null (де ExpiresAt > UTC NOW)
+DELETE /api/v1/anon-polls/:id                  — закриває опитування (ExpiresAt = NOW())
 ```
 
 ### Roles
@@ -586,6 +629,12 @@ Recurring HomeGroup events є "ghost" — прозорі події-шаблон
     + UserActivities: Content, OldValue, NewValue (nullable text)
     + UserCustomFieldValues table (Id, UserId FK, FieldId FK, Value?) для адмінських значень
     кастомних полів. Unique (UserId, FieldId).
+23. `AddTelegramChatIdAndAnonymousPolls` —
+    + Users.TelegramChatId (bigint nullable)
+    + People.TelegramChatId (bigint nullable)
+    + AnonymousPolls table (Id, HomeGroupId FK Cascade, StartedByUserId? FK SetNull,
+      DestinationChatId bigint, StartedAt, ExpiresAt)
+      Index on (HomeGroupId, ExpiresAt)
 
 ## Startup Data Migrations (Program.cs `MigrateLegacyScheduleData`)
 Запускається при старті після `Database.Migrate()`:
@@ -691,7 +740,7 @@ Nginx проксує на контейнер. SSL через Certbot + Let's Enc
 - [x] GET /attendance/dots фільтрує MeetingDate <= today — майбутні зустрічі не потрапляють в точки
 - [x] GET/PUT /groups/:id/notif-settings — налаштування Telegram-сповіщень per group [page.cabinet]
       Зберігається в HomeGroupEntity.NotifSettingsJson (text, JSON)
-      Ключі: event_7days, event_day, conflict, conflict_resolved, attendance_ask (дефолт: всі true)
+      Ключі: event_7days, event_day, conflict, conflict_resolved, attendance_ask, needs_recording_ask (дефолт: всі true)
       Бот читає через API (не локальний файл), планувальник перевіряє перед кожним сповіщенням
 - [x] GET/POST/PUT/DELETE /groups/:id/needs — потреби групи [page.cabinet / groups.events.manage]
       GroupNeed: SubjectName, Description, Status (active|answered|irrelevant), PersonId?, UserId?
@@ -767,6 +816,17 @@ Nginx проксує на контейнер. SSL через Certbot + Let's Enc
 - [x] Stats page (desktop/mobile) — додано картки "Під ризиком" (3+ пропуски, незалежно
       від вибраного періоду) та "Розподіл за статусом" (SVG donut для цієї групи).
       Фікс: прогрес-бари в "Рейтинг присутності" на десктопі більше не вилізають за картку.
+- [x] Kyiv timezone fix — `KyivNow()` / `KyivToday()` статичні методи в GroupsController.
+      Всі `DateTime.UtcNow` → Kyiv-local для `ComputeNextMeeting`, `ComputeLastMeeting`,
+      `prevScheduledMeetingDate`. Виправляє авто-attendance та анонс потреб після зустрічі.
+- [x] TelegramChatId на Person і User — bot persists chat_id via middleware;
+      `PUT /people/:id/telegram-chat-id` і `PUT /admins/:id/telegram-chat-id` (без [RequirePermission])
+- [x] AnonymousPoll entity + AnonymousPollsController:
+      `POST /api/v1/anon-polls` [groups.events.manage], `GET /api/v1/anon-polls/active?homeGroupId=`,
+      `DELETE /api/v1/anon-polls/:id`. ExpiresAt = кінець дня за Kyiv timezone в UTC.
+- [x] NotifSettings: додано `needsRecordingAsk` ключ (6-й toggle для запису потреб)
+- [x] GroupMemberResponse: додано `Telegram?` і `TelegramChatId?` поля
+      (бот використовує для сповіщень анонімного опитування)
 
 ## TODO
 
