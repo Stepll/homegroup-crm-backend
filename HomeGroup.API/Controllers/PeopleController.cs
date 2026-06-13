@@ -62,7 +62,9 @@ public class PeopleController(AppDbContext db) : ControllerBase
             p.PersonStatus != null ? new PersonStatusDto(p.PersonStatus.Id, p.PersonStatus.Name, p.PersonStatus.Color) : null,
             p.PrimaryGroupId, p.PrimaryGroup?.Name, p.PrimaryGroup?.Color,
             p.CreatedAt, false, null, null,
-            p.OversightUser is null ? null : $"{p.OversightUser.Name}{(p.OversightUser.LastName is null ? "" : " " + p.OversightUser.LastName)}")).ToList();
+            p.OversightUser is null ? null : $"{p.OversightUser.Name}{(p.OversightUser.LastName is null ? "" : " " + p.OversightUser.LastName)}",
+            Telegram: p.Telegram,
+            TelegramChatId: p.TelegramChatId)).ToList();
 
         // ── Admins ────────────────────────────────────────────────────────────
         if (includeAdmins && !myOversight && !noGroup)
@@ -276,6 +278,18 @@ public class PeopleController(AppDbContext db) : ControllerBase
         if (person is null) return NotFound();
 
         db.People.Remove(person);
+        await db.SaveChangesAsync();
+        return NoContent();
+    }
+
+    public record SetTelegramChatIdRequest(long? ChatId);
+
+    [HttpPut("{id}/telegram-chat-id")]
+    public async Task<IActionResult> SetTelegramChatId(long id, SetTelegramChatIdRequest request)
+    {
+        var person = await db.People.FindAsync(id);
+        if (person is null) return NotFound();
+        person.TelegramChatId = request.ChatId;
         await db.SaveChangesAsync();
         return NoContent();
     }

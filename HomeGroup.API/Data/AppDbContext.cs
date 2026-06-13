@@ -31,6 +31,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<UserActivity> UserActivities => Set<UserActivity>();
     public DbSet<UserCustomFieldValue> UserCustomFieldValues => Set<UserCustomFieldValue>();
     public DbSet<AttendanceImport> AttendanceImports => Set<AttendanceImport>();
+    public DbSet<AnonymousPoll> AnonymousPolls => Set<AnonymousPoll>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -287,6 +288,21 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             .WithMany()
             .HasForeignKey(i => i.CreatedByUserId)
             .OnDelete(DeleteBehavior.SetNull);
+
+        modelBuilder.Entity<AnonymousPoll>()
+            .HasOne(p => p.HomeGroup)
+            .WithMany()
+            .HasForeignKey(p => p.HomeGroupId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<AnonymousPoll>()
+            .HasOne(p => p.StartedByUser)
+            .WithMany()
+            .HasForeignKey(p => p.StartedByUserId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        modelBuilder.Entity<AnonymousPoll>()
+            .HasIndex(p => new { p.HomeGroupId, p.ExpiresAt });
 
         // Seed roles
         modelBuilder.Entity<Role>().HasData(

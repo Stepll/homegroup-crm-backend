@@ -40,7 +40,9 @@ public record GroupMemberResponse(
     string? OversightUserName = null,
     DateTime? JoinedAt = null,
     bool IsFormer = false,
-    DateTime? LeftAt = null);
+    DateTime? LeftAt = null,
+    string? Telegram = null,
+    long? TelegramChatId = null);
 
 public record NotifSettingsDto(
     bool EventSevenDays,

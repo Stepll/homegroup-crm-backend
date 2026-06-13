@@ -217,6 +217,18 @@ public class AdminsController(AppDbContext db) : ControllerBase
         return NoContent();
     }
 
+    public record SetAdminTelegramChatIdRequest(long? ChatId);
+
+    [HttpPut("{id:long}/telegram-chat-id")]
+    public async Task<IActionResult> SetTelegramChatId(long id, SetAdminTelegramChatIdRequest request)
+    {
+        var user = await db.Users.FindAsync(id);
+        if (user is null) return NotFound();
+        user.TelegramChatId = request.ChatId;
+        await db.SaveChangesAsync();
+        return NoContent();
+    }
+
     [HttpDelete("{id:long}")]
     [RequirePermission("settings.admins")]
     public async Task<IActionResult> Delete(long id)
@@ -410,7 +422,8 @@ public class AdminsController(AppDbContext db) : ControllerBase
             u.Ministry,
             u.IsBaptizedWithSpirit,
             u.PersonStatus is null ? null : new PersonStatusDto(u.PersonStatus.Id, u.PersonStatus.Name, u.PersonStatus.Color),
-            customFields
+            customFields,
+            u.TelegramChatId
         );
     }
 

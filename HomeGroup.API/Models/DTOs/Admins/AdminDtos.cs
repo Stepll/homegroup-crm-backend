@@ -31,7 +31,8 @@ public record AdminResponse(
     string? Ministry,
     bool IsBaptizedWithSpirit,
     PersonStatusDto? Status,
-    List<CustomFieldDto> CustomFields);
+    List<CustomFieldDto> CustomFields,
+    long? TelegramChatId = null);
 
 public record CreateAdminRequest(
     string Name,

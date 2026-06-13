@@ -8,6 +8,7 @@ public class Person
     public string? Phone { get; set; }
     public string? Email { get; set; }
     public string? Telegram { get; set; }
+    public long? TelegramChatId { get; set; }
     public string? Notes { get; set; }
     public string? Gender { get; set; }
     public string? MaritalStatus { get; set; }
