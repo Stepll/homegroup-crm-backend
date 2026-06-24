@@ -828,6 +828,30 @@ Nginx проксує на контейнер. SSL через Certbot + Let's Enc
 - [x] GroupMemberResponse: додано `Telegram?` і `TelegramChatId?` поля
       (бот використовує для сповіщень анонімного опитування)
 
+### Church Services (лічильник зібрань)
+`ChurchServiceRecord` — запис присутності на церковних зібраннях:
+- `ServiceType`: `sunday_1` | `sunday_2` | `vpb` | `youth` | `night_prayer`
+- `Date` (DateOnly). Унікальний індекс `(ServiceType, Date)`.
+- `AttendanceCount` — кількість присутніх
+- `CommunionCount?` — причасники (тільки для `sunday_1` / `sunday_2`)
+- `Notes?`, `CreatedByUserId?` (FK → Users, SetNull)
+
+```
+GET    /api/v1/church-services         ?type=&from=&to=     [church.attendance.view]
+POST   /api/v1/church-services                              [church.attendance.record]
+PUT    /api/v1/church-services/:id                          [church.attendance.record]
+DELETE /api/v1/church-services/:id                          [church.attendance.record]
+GET    /api/v1/church-services/stats   ?type=&from=&to=     [church.attendance.view]
+GET    /api/v1/church-services/export  ?type=&from=&to=     [church.attendance.view]
+```
+
+Stats повертає `monthly[]` (по місяцях) + `yearOverYear[]` (для year-over-year порівняння).
+Export — Excel з окремим аркушем на кожен тип події.
+
+Фронт: `/church` (записи з табами) + `/church/stats` (тренди + year-over-year).
+Нова вкладка "Служіння" в мобайл-меню та пункт "Служіння" в десктоп-меню,
+обидва захищені `church.attendance.view`.
+
 ## TODO
 
 - [ ] Опіка (Oversight) — configurable list

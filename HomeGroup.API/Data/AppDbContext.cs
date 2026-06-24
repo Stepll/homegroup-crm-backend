@@ -32,6 +32,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<UserCustomFieldValue> UserCustomFieldValues => Set<UserCustomFieldValue>();
     public DbSet<AttendanceImport> AttendanceImports => Set<AttendanceImport>();
     public DbSet<AnonymousPoll> AnonymousPolls => Set<AnonymousPoll>();
+    public DbSet<ChurchServiceRecord> ChurchServiceRecords => Set<ChurchServiceRecord>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -303,6 +304,16 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
 
         modelBuilder.Entity<AnonymousPoll>()
             .HasIndex(p => new { p.HomeGroupId, p.ExpiresAt });
+
+        modelBuilder.Entity<ChurchServiceRecord>()
+            .HasOne(r => r.CreatedByUser)
+            .WithMany()
+            .HasForeignKey(r => r.CreatedByUserId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        modelBuilder.Entity<ChurchServiceRecord>()
+            .HasIndex(r => new { r.ServiceType, r.Date })
+            .IsUnique();
 
         // Seed roles
         modelBuilder.Entity<Role>().HasData(
